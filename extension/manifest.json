@@ -1,0 +1,17 @@
+{
+  "name": "내 윈도우 매니저 (테스트)",
+  "version": "0.1",
+  "manifest_version": 3,
+  "description": "파이썬 앱과 통신하기 위한 테스트 확장",
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "permissions": [
+    "tabs"
+  ],
+  "host_permissions": [
+    "ws://localhost:9090/"
+  ]
+}
