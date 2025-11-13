@@ -9,7 +9,6 @@ import threading
 from queue import Empty 
 from window_utils import get_open_windows
 # [수정] AI 프로세서를 직접 호출하지 않으므로 import 제거
-# from gemini_processor import get_summary_from_gemini 
 
 global_connected_clients = set() 
 last_processed_state = None
@@ -40,17 +39,31 @@ async def handler(websocket, ui_queue, job_queue): # [수정] job_queue를 받�
                 if current_state == last_processed_state:
                     continue 
                 
-                # -------------------------------------------------
-                # [수정] AI를 직접 호출하는 대신, 'job_queue'에 작업을 넣습니다.
-                # -------------------------------------------------
-                print("[DEBUG] 데이터 변경 감지. AI 작업 큐에 추가...")
+                print("[DEBUG] 데이터 변경 감지.")
                 last_processed_state = current_state
+
+                # -------------------------------------------------
+                # [수정] 데이터를 *두 개의 큐*로 분리해서 전송
+                # -------------------------------------------------
                 
-                job_data = {
+                # 1. "전체 목록" 탭을 위한 '실시간' 데이터
+                #    (AI와 상관없이 즉시 UI에 반영됨)
+                raw_data_for_ui = {
+                    'type': 'raw_update', # [신규] 메시지 타입
                     'raw_tabs': tab_titles,
                     'raw_windows': window_titles
                 }
-                job_queue.put(job_data) # AI 작업자(Worker)에게 일감 전달
+                ui_queue.put(raw_data_for_ui)
+                print("[DEBUG] '실시간' 데이터를 UI 큐에 전송.")
+
+                # 2. "AI 그룹핑" 탭을 위한 '작업 지시서'
+                #    (AI 작업자가 천천히 처리함)
+                job_data_for_ai = {
+                    'raw_tabs': tab_titles,
+                    'raw_windows': window_titles
+                }
+                job_queue.put(job_data_for_ai)
+                print("[DEBUG] 'AI 작업'을 Job 큐에 전송.")
                 # -------------------------------------------------
                 
             except Exception as e:
@@ -73,7 +86,6 @@ async def command_poller(command_queue):
                 print(f"[DEBUG] 명령 감지: {command}")
                 payload = json.dumps(command)
                 for client in global_connected_clients:
-                    print(f"[DEBUG] 클라이언트 {client.remote_address}에게 명령 전송...")
                     await client.send(payload) 
         except Empty:
             await asyncio.sleep(0.1)
