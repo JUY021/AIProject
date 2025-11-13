@@ -3,7 +3,7 @@
 import google.generativeai as genai
 import os
 import json
-# [수정] re 모듈을 사용하지 않습니다.
+import re
 
 model = None
 
@@ -18,7 +18,9 @@ def configure_gemini():
         
         genai.configure(api_key=api_key)
         
-        # 님의 요청대로 'gemini-2.5-pro' 모델을 사용합니다.
+        # -------------------------------------------------
+        # [수정] 님의 요청대로 'gemini-2.5-pro' 모델로 복귀
+        # -------------------------------------------------
         model = genai.GenerativeModel('gemini-2.5-pro') 
         print("Gemini 모델이 성공적으로 설정되었습니다. ('gemini-2.5-pro' 사용)")
         return model
@@ -26,13 +28,13 @@ def configure_gemini():
         print(f"오류: API 키 설정에 실패했습니다: {e}"); exit()
 
 def get_summary_from_gemini(tab_titles, window_titles):
-    """두 목록을 받아 Gemini에게 '그룹핑 JSON'을 요청합니다. (요약 없음)"""
+    """[수정] 'summary'(1줄 요약)을 다시 포함하도록 요청합니다."""
     global model
     if not model:
         print("오류: Gemini 모델이 초기화되지 않았습니다.")
         return []
 
-    # '요약'을 빼서 AI의 작업량을 줄인 프롬프트
+    # (프롬프트는 동일... 생략)
     prompt = f"""
 [데이터]
 - 브라우저 탭: {tab_titles}
@@ -44,13 +46,13 @@ def get_summary_from_gemini(tab_titles, window_titles):
 
 [규칙]
 1. 반드시 "JSON 리스트" 형식으로만 응답해야 합니다.
-2. 각 그룹은 'category'(그룹 이름)와 'items'(항목 리스트) 키만 가져야 합니다.
+2. 각 그룹은 'category'(그룹 이름), 'summary'(1줄 요약), 'items'(항목 리스트) 키를 가져야 합니다.
 3. [데이터]를 기반으로 3~5개의 카테고리로 세분화하여 그룹화하세요.
 4. '시스템 및 유틸리티', '새 탭' 같은 무의미한 그룹은 만들지 말고, 실제 작업 위주로 묶어주세요.
 
 [JSON 형식 예시]
 [
-  {{"category": "업무 문서 작업", "items": ["보고서.xlsx", "회의록 - Notion"]}}
+  {{"category": "업무 문서 작업", "summary": "엑셀과 노션으로 문서를 작성 중입니다.", "items": ["보고서.xlsx", "회의록 - Notion"]}}
 ]
 
 [JSON 응답 시작]
@@ -68,11 +70,18 @@ def get_summary_from_gemini(tab_titles, window_titles):
         
         text = ai_response_text.strip()
         
-        # -------------------------------------------------
-        # [수정] re(정규식)를 사용하지 않고, 수동으로 JSON을 찾습니다.
-        # -------------------------------------------------
-        
-        # 1. AI 응답에서 첫 '[' 또는 '{'를 찾습니다.
+        # 1. [수정] 마크다운 블록 제거 (더욱 강력하게)
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+            
+        if text.endswith("```"):
+            text = text[:-3]
+            
+        text = text.strip() # 다시 공백 제거
+
+        # 2. [수정] JSON 시작점 찾기 (첫 '{' 또는 '[')
         json_start_index = -1
         first_brace = text.find('[')
         first_bracket = text.find('{')
@@ -85,17 +94,25 @@ def get_summary_from_gemini(tab_titles, window_titles):
         if json_start_index == -1:
              raise ValueError("AI 응답에서 JSON 시작점( '[' 또는 '{' )을 찾을 수 없습니다.")
 
-        # 2. '[' 또는 '{' 부터 끝까지가 JSON이라고 가정
-        cleaned_json = text[json_start_index:]
+        # 3. [수정] JSON 끝점 찾기 (마지막 '}' 또는 ']')
+        last_brace = text.rfind(']')
+        last_bracket = text.rfind('}')
+        json_end_index = max(last_brace, last_bracket)
         
-        # 3. [핵심] 만약 AI가 '{'로 시작했다면 (로그에서처럼), 
-        #    우리가 직접 맨 앞에 '['를 붙여서 올바른 JSON 리스트로 고쳐줍니다.
+        if json_end_index == -1:
+            raise ValueError("AI 응답에서 JSON 끝점( ']' 또는 '}' )을 찾을 수 없습니다.")
+
+        # 4. [수정] 시작점과 끝점을 기준으로 '정확한' JSON 부분만 잘라내기
+        cleaned_json = text[json_start_index : json_end_index + 1]
+        
+        # 5. [수정] AI가 리스트 괄호([ ])를 빠뜨린 경우 수동 복구
+        #    (시작이 '{' 이면, AI가 1개 이상의 객체를 보냈지만 
+        #     리스트로 감싸지 않은 것으로 간주하고 강제로 래핑)
         if cleaned_json.startswith('{'):
-            print("[DEBUG] AI가 '['를 빠뜨렸습니다. JSON을 수동으로 복구합니다...")
-            cleaned_json = '[' + cleaned_json
+             print("[DEBUG] AI가 리스트 괄호 '['와 ']'를 빠뜨린 것으로 보입니다. 수동 복구합니다...")
+             cleaned_json = '[' + cleaned_json + ']'
         
-        # -------------------------------------------------
-        
+        # 6. 파싱
         parsed_json = json.loads(cleaned_json)
         print(f"[DEBUG] JSON 파싱 성공. {len(parsed_json)}개 카테고리 반환.")
         return parsed_json
