@@ -4,7 +4,7 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import threading
-from queue import Queue
+from queue import Queue # [수정] 큐를 2개 사용할 것이므로 이름 변경 안 함
 
 # 모듈 import
 from gemini_processor import configure_gemini
@@ -13,9 +13,10 @@ from window_utils import close_window_by_title
 from ui_components import ScrollableTab
 
 # -------------------------------------------------------------------
-# (UI 위젯 전역 변수... 동일)
+# UI 위젯을 저장할 전역 변수
 # -------------------------------------------------------------------
-ui_queue = Queue() 
+ui_queue = Queue()     # (서버 -> UI) AI 요약 결과를 받는 통로
+command_queue = Queue() # [신규] (UI -> 서버) '탭 닫기' 명령을 보내는 통로
 is_ui_updating = False 
 
 # -------------------------------------------------------------------
@@ -28,7 +29,7 @@ def clear_container(container):
             widget.destroy()
 
 def update_ai_summary_tab(container, ai_summary_json):
-    """(탭 1) "관련 작업" 탭을 '수정된 카드'로 채웁니다."""
+    """(탭 1) "관련 작업" 탭을 UI에 그립니다."""
     print(f"[DEBUG] 'AI 요약 탭' 업데이트 시작. {len(ai_summary_json)}개 카테고리.")
     if not container: return
 
@@ -41,41 +42,45 @@ def update_ai_summary_tab(container, ai_summary_json):
             category_name = category_group.get('category', '알 수 없음')
             items = category_group.get('items', [])
 
-            # -------------------------------------------------
-            # [수정] Labelframe 대신 Frame + Label을 사용해 제목을 키웁니다.
-            # -------------------------------------------------
-            
-            # 1. 카드 전체를 감싸는 프레임 (테두리)
-            card_frame = ttk.Frame(container, padding=10, bootstyle="light")
+            # [수정] UI를 'Labelframe' 카드로 복구 (Collapse 오류 방지)
+            card_frame = ttk.Labelframe(
+                master=container,
+                text=category_name, 
+                bootstyle="secondary",
+                padding=10
+            )
             card_frame.pack(fill=X, pady=5, padx=5)
             
-            # 2. 카테고리 제목 (크고, 테마 기본 색상 사용)
-            title_label = ttk.Label(
-                card_frame, 
-                text=category_name, 
-                font=("Arial", 14, "bold"), # 폰트 크기 14, 굵게
-                bootstyle="default"         # 회색 대신 기본 텍스트 색상
-            )
-            title_label.pack(anchor="w", fill=X, padx=5, pady=(0, 10)) # 하단 여백 추가
-
-            # 3. 항목 리스트
             items_text = "\n".join(f"• {item}" for item in items)
             items_label = ttk.Label(card_frame, text=items_text, font=("Arial", 10), justify=LEFT)
-            items_label.pack(anchor="w", fill=X, padx=10, pady=(0, 5))
+            items_label.pack(anchor="w", fill=X, padx=10, pady=10)
 
 
 def on_close_program_button_click(title):
+    """(프로그램용) 닫기 버튼 콜백"""
     print(f"'{title}' 프로그램 닫기 요청...")
     close_window_by_title(title)
 
+# -------------------------------------------------
+# [신규] '탭 닫기' 버튼 콜백
+# -------------------------------------------------
+def on_close_tab_button_click(title):
+    """(브라우저 탭용) 닫기 버튼 콜백"""
+    print(f"'{title}' 탭 닫기 요청...")
+    # [신규] '명령 큐'에 JSON 명령을 넣습니다.
+    command_queue.put({
+        "action": "close_tab",
+        "title": title
+    })
+
 def update_raw_list_tab(container, raw_tabs, raw_windows):
-    """(탭 2) "전체 목록" 탭에 [X] 닫기 버튼과 아이콘을 추가합니다."""
+    """(탭 2) "전체 목록" 탭에 [X] 닫기 버튼을 추가합니다."""
     print(f"[DEBUG] '전체 목록 탭' 업데이트 시작. 탭 {len(raw_tabs)}개, 창 {len(raw_windows)}개.")
     if not container: return
 
     clear_container(container)
     
-    # 1. 프로그램 창 (닫기 버튼 추가)
+    # 1. 프로그램 창 (닫기 버튼)
     ttk.Label(container, text="프로그램 창", font=("Arial", 14, "bold")).pack(anchor="w", pady=(10, 5), padx=5)
     if not raw_windows:
         ttk.Label(container, text="- 열린 프로그램이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
@@ -83,16 +88,11 @@ def update_raw_list_tab(container, raw_tabs, raw_windows):
         for item in raw_windows:
             item_frame = ttk.Frame(container)
             item_frame.pack(fill=X, padx=10)
-            
             close_button = ttk.Button(
-                item_frame, 
-                text="X", 
-                bootstyle="danger-outline", 
-                width=2,
+                item_frame, text="X", bootstyle="danger-outline", width=2,
                 command=lambda title=item: on_close_program_button_click(title)
             )
             close_button.pack(side=RIGHT, padx=5)
-
             label = ttk.Label(item_frame, text=f"🖥️ {item}", font=("Arial", 10)) 
             label.pack(side=LEFT, anchor="w")
 
@@ -100,8 +100,25 @@ def update_raw_list_tab(container, raw_tabs, raw_windows):
     ttk.Label(container, text="브라우저 탭", font=("Arial", 14, "bold")).pack(anchor="w", pady=(20, 5), padx=5)
     if not raw_tabs:
         ttk.Label(container, text="- 열린 탭이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
-    for item in raw_tabs:
-        ttk.Label(container, text=f"🌐 {item}", font=("Arial", 10)).pack(anchor="w", padx=30)
+    else:
+        for item in raw_tabs:
+            # -------------------------------------------------
+            # [수정] 브라우저 탭에도 [X] 닫기 버튼 추가
+            # -------------------------------------------------
+            item_frame = ttk.Frame(container)
+            item_frame.pack(fill=X, padx=10)
+            
+            close_button = ttk.Button(
+                item_frame, 
+                text="X", 
+                bootstyle="danger-outline", # (일단 'danger'로 표시, 나중에 'info' 등으로 변경)
+                width=2,
+                command=lambda title=item: on_close_tab_button_click(title)
+            )
+            close_button.pack(side=RIGHT, padx=5)
+
+            label = ttk.Label(item_frame, text=f"🌐 {item}", font=("Arial", 10))
+            label.pack(side=LEFT, anchor="w")
         
 
 def check_queue(root, tab_ai, tab_raw):
@@ -115,13 +132,11 @@ def check_queue(root, tab_ai, tab_raw):
     try:
         message_data = ui_queue.get_nowait()
         print(f"[DEBUG] UI 큐에서 새 데이터 수신: {len(message_data.get('ai_summary', []))}개 카테고리")
-
         is_ui_updating = True 
         
         if message_data.get('error'):
             print(f"UI 큐 오류 수신: {message_data['error']}")
         else:
-            # (독립 실행 로직)
             try:
                 update_ai_summary_tab(tab_ai.container, message_data.get('ai_summary', []))
             except Exception as e:
@@ -142,13 +157,18 @@ def check_queue(root, tab_ai, tab_raw):
         root.after(100, check_queue, root, tab_ai, tab_raw)
 
 # -------------------------------------------------------------------
-# (프로그램의 진짜 시작점... 이하는 동일)
+# 프로그램의 진짜 시작점
 # -------------------------------------------------------------------
 if __name__ == "__main__":
     
     configure_gemini()
 
-    server_thread = threading.Thread(target=start_server_thread, args=(ui_queue,), daemon=True)
+    # [수정] command_queue를 start_server_thread로 전달
+    server_thread = threading.Thread(
+        target=start_server_thread, 
+        args=(ui_queue, command_queue), # <-- command_queue 추가
+        daemon=True
+    )
     server_thread.start()
     
     root = ttk.Window(themename="superhero")
