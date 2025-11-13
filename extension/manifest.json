@@ -1,6 +1,6 @@
 {
   "name": "내 윈도우 매니저 (테스트)",
-  "version": "0.1",
+  "version": "0.2",
   "manifest_version": 3,
   "description": "파이썬 앱과 통신하기 위한 테스트 확장",
   
