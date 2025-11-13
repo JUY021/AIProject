@@ -4,7 +4,7 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import threading
-from queue import Queue, Empty 
+from queue import Queue, Empty
 import time 
 
 # 모듈 import
@@ -14,52 +14,42 @@ from window_utils import close_window_by_title
 from ui_components import ScrollableTab
 
 # -------------------------------------------------------------------
-# 큐(Queue) 정의
+# (큐, 잠금 변수... 동일)
 # -------------------------------------------------------------------
-ui_queue = Queue()      # (서버/AI -> UI) *모든* UI 업데이트 통로
-command_queue = Queue() # (UI -> 서버) '탭 닫기' 명령을 보내는 통로
-job_queue = Queue()     # [신규] (서버 -> AI) '작업 지시서'가 쌓이는 대기열
+ui_queue = Queue()
+command_queue = Queue()
+job_queue = Queue()
 is_ui_updating = False 
 
 # -------------------------------------------------------------------
-# AI 작업자(Worker) 스레드
+# (AI 작업자 스레드... 동일)
 # -------------------------------------------------------------------
 def ai_worker_thread(job_q, ui_q):
-    """
-    'job_queue'를 계속 감시하며, "15초 디바운싱" 로직으로
-    AI를 호출하고, 그 결과를 'ui_queue'에 넣습니다.
-    """
-    DEBOUNCE_SECONDS = 15 # 15초간 변경이 없으면 처리
-    
+    DEBOUNCE_SECONDS = 15 
     while True:
         try:
-            # 1. 큐에서 작업이 올 때까지 '숨 참고' 대기 (Blocking)
             job_data = job_q.get() 
             print("[DEBUG] AI 작업자: 새 작업 감지. 15초 디바운스 시작...")
-
-            # 2. 15초 대기. 그동안 큐에 쌓인 모든 작업을 '무시'하고
-            #    '마지막' 작업만 남깁니다.
             time.sleep(DEBOUNCE_SECONDS)
-            
             try:
                 while True:
-                    job_data = job_q.get_nowait() # 논블로킹으로 큐 비우기
+                    job_data = job_q.get_nowait()
                     print("[DEBUG] AI 작업자: 중간 작업 건너뜀...")
             except Empty:
-                pass # 큐가 다 비워졌으면 통과
+                pass 
             
             print("[DEBUG] AI 작업자: 15초 경과. '마지막' 작업으로 AI 호출 시작...")
             
-            # 3. (오래 걸리는) AI 작업 호출
             ai_summary_json = get_summary_from_gemini(
                 job_data['raw_tabs'], 
                 job_data['raw_windows']
             )
             
-            # 4. AI 작업이 끝나면, 결과물을 UI 큐에 넣음
             ai_data_for_ui = {
                 'type': 'ai_update', 
-                'ai_summary': ai_summary_json 
+                'ai_summary': ai_summary_json,
+                'raw_tabs': job_data['raw_tabs'],
+                'raw_windows': job_data['raw_windows']
             }
             ui_q.put(ai_data_for_ui)
             
@@ -77,27 +67,14 @@ def clear_container(container):
         for widget in container.winfo_children():
             widget.destroy()
 
-# -------------------------------------------------
-# [신규] "통합 닫기" 버튼 콜백 (main_app.py로 이동)
-# -------------------------------------------------
 def on_close_item_click(title):
-    """
-    [X] 버튼을 누르면 호출되는 '통합' 함수입니다.
-    (프로그램 닫기 + 탭 닫기 명령을 둘 다 보냅니다)
-    """
+    """(통합 닫기 버튼 콜백)"""
     print(f"'{title}' 항목 닫기 요청...")
-    
-    # 1. (Python) 프로그램 닫기 시도
     close_window_by_title(title)
-    
-    # 2. (JS) 브라우저 탭 닫기 시도
-    command_queue.put({
-        "action": "close_tab",
-        "title": title
-    })
+    command_queue.put({ "action": "close_tab", "title": title })
 
-def update_ai_summary_tab(container, ai_summary_json):
-    """(탭 1) "관련 작업" 탭에 [X] 닫기 버튼을 추가합니다."""
+def update_ai_summary_tab(container, ai_summary_json, raw_tabs, raw_windows):
+    """(탭 1) "관련 작업" 탭을 '커스텀 스타일' 카드로 채웁니다."""
     print(f"[DEBUG] 'AI 요약 탭' 업데이트 시작. {len(ai_summary_json)}개 카테고리.")
     if not container: return
 
@@ -110,52 +87,57 @@ def update_ai_summary_tab(container, ai_summary_json):
             category_name = category_group.get('category', '알 수 없음')
             items = category_group.get('items', [])
 
-            # 1. 카드 프레임 (Labelframe)
+            # '커스텀 스타일' (크고 밝은 폰트) Labelframe 사용
             card_frame = ttk.Labelframe(
                 master=container,
-                text=category_name, 
-                bootstyle="secondary",
+                text=category_name,
+                style="Custom.TLabelframe", # <-- 커스텀 스타일
                 padding=10
             )
             card_frame.pack(fill=X, pady=5, padx=5)
             
-            # -------------------------------------------------
-            # [수정] AI 요약 탭에도 닫기 버튼이 있는 항목 리스트
-            # -------------------------------------------------
             if not items:
                 ttk.Label(card_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
             else:
                 for item in items:
+                    icon = "•" 
+                    if item in raw_windows: icon = "🖥️"
+                    elif item in raw_tabs: icon = "🌐"
+                    
                     item_frame = ttk.Frame(card_frame)
-                    item_frame.pack(fill=X)
+                    item_frame.pack(fill=X, padx=10) 
                     
                     close_button = ttk.Button(
-                        item_frame, 
-                        text="X", 
-                        bootstyle="danger-outline", 
-                        width=2,
+                        item_frame, text="X", bootstyle="danger-outline", width=2,
                         command=lambda title=item: on_close_item_click(title)
                     )
                     close_button.pack(side=RIGHT, padx=5)
 
-                    label = ttk.Label(item_frame, text=f"• {item}", font=("Arial", 10))
+                    label = ttk.Label(item_frame, text=f"{icon} {item}", font=("Arial", 10))
                     label.pack(side=LEFT, anchor="w")
 
 
 def update_raw_list_tab(container, raw_tabs, raw_windows):
-    """(탭 2) "전체 목록" 탭에 [X] 닫기 버튼과 아이콘을 추가합니다."""
+    """(탭 2) "전체 목록" 탭을 '커스텀 스타일' 카드로 채웁니다."""
     print(f"[DEBUG] '전체 목록 탭' 업데이트 시작. 탭 {len(raw_tabs)}개, 창 {len(raw_windows)}개.")
     if not container: return
 
     clear_container(container)
     
-    # 1. 프로그램 창
-    ttk.Label(container, text="프로그램 창", font=("Arial", 14, "bold")).pack(anchor="w", pady=(10, 5), padx=5)
+    # 1. 프로그램 창 (커스텀 스타일 적용)
+    prog_frame = ttk.Labelframe(
+        container, 
+        text="프로그램 창", 
+        style="Custom.TLabelframe", # <-- 커스텀 스타일
+        padding=10
+    )
+    prog_frame.pack(fill=X, pady=5, padx=5)
+
     if not raw_windows:
-        ttk.Label(container, text="- 열린 프로그램이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
+        ttk.Label(prog_frame, text="- 열린 프로그램이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
         for item in raw_windows:
-            item_frame = ttk.Frame(container)
+            item_frame = ttk.Frame(prog_frame) 
             item_frame.pack(fill=X, padx=10)
             close_button = ttk.Button(
                 item_frame, text="X", bootstyle="danger-outline", width=2,
@@ -165,13 +147,20 @@ def update_raw_list_tab(container, raw_tabs, raw_windows):
             label = ttk.Label(item_frame, text=f"🖥️ {item}", font=("Arial", 10)) 
             label.pack(side=LEFT, anchor="w")
 
-    # 2. 브라우저 탭
-    ttk.Label(container, text="브라우저 탭", font=("Arial", 14, "bold")).pack(anchor="w", pady=(20, 5), padx=5)
+    # 2. 브라우저 탭 (커스텀 스타일 적용)
+    tab_frame = ttk.Labelframe(
+        container, 
+        text="브라우저 탭", 
+        style="Custom.TLabelframe", # <-- 커스텀 스타일
+        padding=10
+    )
+    tab_frame.pack(fill=X, pady=5, padx=5)
+    
     if not raw_tabs:
-        ttk.Label(container, text="- 열린 탭이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
+        ttk.Label(tab_frame, text="- 열린 탭이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
         for item in raw_tabs:
-            item_frame = ttk.Frame(container)
+            item_frame = ttk.Frame(tab_frame) 
             item_frame.pack(fill=X, padx=10)
             close_button = ttk.Button(
                 item_frame, text="X", bootstyle="danger-outline", width=2,
@@ -192,7 +181,6 @@ def check_queue(root, tab_ai, tab_raw):
 
     try:
         message_data = ui_queue.get_nowait()
-        
         message_type = message_data.get('type')
         
         if message_type == 'raw_update':
@@ -208,7 +196,12 @@ def check_queue(root, tab_ai, tab_raw):
             print("[DEBUG] UI 큐: 'AI 결과' 데이터 수신.")
             is_ui_updating = True 
             try:
-                update_ai_summary_tab(tab_ai.container, message_data.get('ai_summary', []))
+                update_ai_summary_tab(
+                    tab_ai.container, 
+                    message_data.get('ai_summary', []),
+                    message_data.get('raw_tabs', []),
+                    message_data.get('raw_windows', [])
+                )
             except Exception as e:
                 print(f"[DEBUG] !!! AI 요약 탭 업데이트 중 오류 발생: {e} !!!")
             root.update_idletasks()
@@ -231,15 +224,13 @@ if __name__ == "__main__":
     
     configure_gemini()
 
-    # 1. 웹소켓 서버 스레드 시작
     server_thread = threading.Thread(
         target=start_server_thread, 
-        args=(ui_queue, command_queue, job_queue), # <-- 3개 큐 전달
+        args=(ui_queue, command_queue, job_queue),
         daemon=True
     )
     server_thread.start()
     
-    # 2. AI 작업자 스레드 시작
     worker_thread = threading.Thread(
         target=ai_worker_thread,
         args=(job_queue, ui_queue), 
@@ -247,10 +238,28 @@ if __name__ == "__main__":
     )
     worker_thread.start()
     
-    # 3. 메인 UI 스레드 시작
     root = ttk.Window(themename="superhero")
     root.title("내 작업 요약기 (AIProject)")
     root.geometry("600x700")
+
+    # -------------------------------------------------
+    # [수정] 'Custom.TLabelframe' 스타일 정의 (테두리 색상 복구)
+    # -------------------------------------------------
+    style = ttk.Style()
+    default_fg = style.lookup("TLabel", "foreground") # 밝은 글자색
+
+    style.configure(
+        "Custom.TLabelframe", 
+        relief="solid",
+        borderwidth=1,
+        bordercolor=default_fg # [수정] 테두리 색을 밝은 글자색으로 강제
+    )
+    style.configure(
+        "Custom.TLabelframe.Label",
+        font=("Arial", 14, "bold"), # 폰트 14, 굵게
+        foreground=default_fg      
+    )
+    # -------------------------------------------------
 
     title_label = ttk.Label(root, text="실시간 작업 요약 대시보드", font=("Arial", 16, "bold"))
     title_label.pack(pady=10)
@@ -258,8 +267,8 @@ if __name__ == "__main__":
     notebook = ttk.Notebook(root)
     notebook.pack(fill=BOTH, expand=YES, padx=10, pady=(0, 10))
 
-    tab_ai_summary = ScrollableTab(notebook, padding=10)
-    tab_raw_list = ScrollableTab(notebook, padding=10)
+    tab_ai_summary = ScrollableTab(notebook, padding=0)
+    tab_raw_list = ScrollableTab(notebook, padding=0)
     
     notebook.add(tab_raw_list, text="전체 목록 (원본)")
     notebook.add(tab_ai_summary, text="관련 작업 (AI 요약)")

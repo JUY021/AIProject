@@ -32,6 +32,7 @@ def get_summary_from_gemini(tab_titles, window_titles):
         print("오류: Gemini 모델이 초기화되지 않았습니다.")
         return []
 
+    # '요약'을 빼서 AI의 작업량을 줄인 프롬프트
     prompt = f"""
 [데이터]
 - 브라우저 탭: {tab_titles}
@@ -44,8 +45,8 @@ def get_summary_from_gemini(tab_titles, window_titles):
 [규칙]
 1. 반드시 "JSON 리스트" 형식으로만 응답해야 합니다.
 2. 각 그룹은 'category'(그룹 이름)와 'items'(항목 리스트) 키만 가져야 합니다.
-3. [데이터]를 기반으로 3~5개의 카테고리로 세분화하여 그룹화하세요.  # <-- [수정] 2-4개 -> 3-5개
-4. '시스템 및 유틸리티', '새 탭' 같은 무의미한 그룹은 만들지 말고, 실제 작업 위주로 묶어주세요. # <-- [추가] 품질 향상
+3. [데이터]를 기반으로 3~5개의 카테고리로 세분화하여 그룹화하세요.
+4. '시스템 및 유틸리티', '새 탭' 같은 무의미한 그룹은 만들지 말고, 실제 작업 위주로 묶어주세요.
 
 [JSON 형식 예시]
 [
@@ -67,6 +68,11 @@ def get_summary_from_gemini(tab_titles, window_titles):
         
         text = ai_response_text.strip()
         
+        # -------------------------------------------------
+        # [수정] re(정규식)를 사용하지 않고, 수동으로 JSON을 찾습니다.
+        # -------------------------------------------------
+        
+        # 1. AI 응답에서 첫 '[' 또는 '{'를 찾습니다.
         json_start_index = -1
         first_brace = text.find('[')
         first_bracket = text.find('{')
@@ -79,11 +85,16 @@ def get_summary_from_gemini(tab_titles, window_titles):
         if json_start_index == -1:
              raise ValueError("AI 응답에서 JSON 시작점( '[' 또는 '{' )을 찾을 수 없습니다.")
 
+        # 2. '[' 또는 '{' 부터 끝까지가 JSON이라고 가정
         cleaned_json = text[json_start_index:]
         
+        # 3. [핵심] 만약 AI가 '{'로 시작했다면 (로그에서처럼), 
+        #    우리가 직접 맨 앞에 '['를 붙여서 올바른 JSON 리스트로 고쳐줍니다.
         if cleaned_json.startswith('{'):
             print("[DEBUG] AI가 '['를 빠뜨렸습니다. JSON을 수동으로 복구합니다...")
             cleaned_json = '[' + cleaned_json
+        
+        # -------------------------------------------------
         
         parsed_json = json.loads(cleaned_json)
         print(f"[DEBUG] JSON 파싱 성공. {len(parsed_json)}개 카테고리 반환.")
