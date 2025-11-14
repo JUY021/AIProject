@@ -3,7 +3,6 @@
 import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-# --- [수정] tkinter 기본 'simpledialog' import ---
 from tkinter import simpledialog
 import threading
 from queue import Queue, Empty
@@ -26,11 +25,12 @@ ui_queue = Queue()
 command_queue = Queue()
 job_queue = Queue()
 
-# --- [신규] 선택 항목 저장을 위한 전역 상태 변수 ---
+# --- [수정] 선택 항목 저장을 위한 전역 상태 변수 ---
 selected_items_set = set()
 global_last_raw_tabs_data = []
 global_last_raw_windows = []
-# --- [신규 끝] ---
+global_last_ai_summary = [] # [신규] 마지막 AI 요약본 저장
+# --- [수정 끝] ---
 
 # -------------------------------------------------------------------
 # (AI 작업자 스레드... 동일)
@@ -163,7 +163,7 @@ def on_delete_group_click(group_to_delete):
     else:
         print("삭제할 그룹을 찾지 못했습니다.")
 
-# --- [신규 기능] 체크박스 클릭 시 호출 ---
+# --- [수정] 체크박스 클릭 시 (UI 갱신 요청 추가) ---
 def on_item_check(item_title, var):
     """(신규) 체크박스 상태가 변경되면 전역 'selected_items_set'을 업데이트합니다."""
     if var.get():
@@ -173,6 +173,10 @@ def on_item_check(item_title, var):
         if item_title in selected_items_set:
             selected_items_set.remove(item_title)
             print(f"[선택] '{item_title}' 제거 (총 {len(selected_items_set)}개)")
+            
+    # --- [신규] 상태 동기화를 위해 UI 갱신 요청 ---
+    ui_queue.put({'type': 'force_live_refresh'})
+# --- [수정 끝] ---
 
 # --- [수정] '선택 항목 저장' 버튼 클릭 시 (root 인자 받도록 수정) ---
 def on_save_selected_click(root):
@@ -574,6 +578,8 @@ def update_saved_sessions_tab(parent_frame):
 def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
     """(수정) 100ms마다 큐를 확인 (전역 변수 갱신, force_live_refresh 처리)"""
     global global_last_raw_tabs_data, global_last_raw_windows
+    # --- [신규] 마지막 AI 요약본 전역 변수 참조 ---
+    global global_last_ai_summary
     
     try:
         message_data = ui_queue.get_nowait()
@@ -601,11 +607,13 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
             # [신규] 전역 변수 갱신
             global_last_raw_tabs_data = message_data.get('raw_tabs_data', [])
             global_last_raw_windows = message_data.get('raw_windows', [])
+            # --- [신규] 마지막 AI 요약본 저장 ---
+            global_last_ai_summary = message_data.get('ai_summary', []) 
             
             try:
                 update_ai_summary_tab(
                     tab_ai_parent, 
-                    message_data.get('ai_summary', []),
+                    global_last_ai_summary, # 수정
                     global_last_raw_tabs_data,
                     global_last_raw_windows
                 )
@@ -619,9 +627,9 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
             except Exception as e:
                 print(f"[DEBUG] !!! 저장 탭 업데이트 중 오류 발생: {e} !!!")
 
-        # --- [신규] '선택 저장' 완료 후 라이브 탭 강제 갱신 ---
+        # --- [수정] 'force_live_refresh' (체크박스 클릭 또는 선택 저장 시) ---
         elif message_type == 'force_live_refresh':
-            print("[DEBUG] UI 큐: '라이브 탭' 갱신 요청 수신 (선택 초기화).")
+            print("[DEBUG] UI 큐: '라이브 탭' 갱신 요청 수신 (선택 상태 동기화).")
             # (저장 후 체크박스를 해제하기 위해 두 탭 모두 갱신)
             try:
                 # 1. 전체 목록 탭 갱신
@@ -631,17 +639,16 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
                     global_last_raw_windows
                 )
                 # 2. AI 탭 갱신
-                #    AI 요약본이 없으므로, 빈 리스트로 갱신하여 체크박스만 초기화
-                #    (다음 AI 갱신 시 어차피 다시 그려짐)
+                # --- [수정] 빈 리스트가 아닌, 저장된 'global_last_ai_summary' 사용 ---
                 update_ai_summary_tab(
                     tab_ai_parent, 
-                    [], # AI 요약본이 없으므로 빈 리스트 전달
+                    global_last_ai_summary, 
                     global_last_raw_tabs_data,
                     global_last_raw_windows
                 )
             except Exception as e:
                 print(f"[DEBUG] !!! 라이브 탭(Raw/AI) 갱신 중 오류 발생: {e} !!!")
-        # --- [신규 끝] ---
+        # --- [수정 끝] ---
 
         elif message_data.get('error'):
             print(f"UI 큐 오류 수신: {message_data['error']}")
