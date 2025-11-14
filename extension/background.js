@@ -41,6 +41,26 @@ function connectWebSocket() {
           }
         });
       }
+      else if (command.action === "activate_tab" && command.title) {
+        console.log(`'${command.title}' 탭 이동 명령 수신...`);
+        
+        chrome.tabs.query({}, function(tabs) {
+          // 제목이 일치하는 탭 찾기
+          const tabToActivate = tabs.find(tab => tab.title === command.title);
+          
+          if (tabToActivate) {
+            // 1) 해당 탭을 활성화 (Active)
+            chrome.tabs.update(tabToActivate.id, { active: true });
+            
+            // 2) 해당 탭이 있는 브라우저 창 자체를 맨 앞으로 (Focus)
+            chrome.windows.update(tabToActivate.windowId, { focused: true });
+            
+            console.log(`탭 이동 완료.`);
+          } else {
+            console.log("해당 제목의 탭을 찾을 수 없습니다.");
+          }
+        });
+      }
     } catch (e) {
       console.error("[WebSocket] 서버 메시지 파싱 오류:", e);
     }

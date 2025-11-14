@@ -10,7 +10,7 @@ import time
 # 모듈 import
 from gemini_processor import configure_gemini, get_summary_from_gemini 
 from websocket_server import start_server_thread
-from window_utils import close_window_by_title 
+from window_utils import close_window_by_title, activate_window_by_title
 from ui_components import ScrollableTab
 
 # -------------------------------------------------------------------
@@ -63,7 +63,25 @@ def ai_worker_thread(job_q, ui_q):
 # UI 업데이트 함수
 # -------------------------------------------------------------------
 
-# [삭제] clear_container 함수는 더 이상 필요 없습니다.
+# -------------------------------------------------------------------
+# 항목 클릭 시 실행될 함수 (이동/활성화)
+# -------------------------------------------------------------------
+def on_item_click(title, raw_windows):
+    """
+    항목을 클릭했을 때 호출됩니다.
+    - PC 창이면: activate_window_by_title 호출
+    - 브라우저 탭이면: WebSocket으로 'activate_tab' 명령 전송
+    """
+    print(f"'{title}' 항목 클릭됨 (이동 요청)")
+    
+    if title in raw_windows:
+        # PC 프로그램 창인 경우
+        success = activate_window_by_title(title)
+        if not success:
+            print("창 활성화 실패 (이미 닫혔거나 권한 부족)")
+    else:
+        # 브라우저 탭인 경우 (창 목록에 없으면 탭으로 간주)
+        command_queue.put({ "action": "activate_tab", "title": title })
 
 def on_close_item_click(title):
     """(통합 닫기 버튼 콜백)"""
@@ -127,8 +145,16 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
                     )
                     close_button.pack(side=RIGHT, padx=5)
 
-                    label = ttk.Label(item_frame, text=f"{icon} {item}", font=("Arial", 10))
+                    label = ttk.Label(
+                        item_frame, 
+                        text=f"{icon} {item}", 
+                        font=("Arial", 10),
+                        cursor="hand2" # 마우스 올리면 손가락 모양
+                    )
                     label.pack(side=LEFT, anchor="w", padx=(0, 5))
+                    
+                    # [수정] 클릭 이벤트 바인딩 (<Button-1> = 좌클릭)
+                    label.bind("<Button-1>", lambda e, t=item: on_item_click(t, raw_windows))
 
 
 def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
@@ -161,8 +187,9 @@ def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
                 command=lambda title=item: on_close_item_click(title) 
             )
             close_button.pack(side=RIGHT, padx=5)
-            label = ttk.Label(item_frame, text=f"🖥️ {item}", font=("Arial", 10)) 
+            label = ttk.Label(item_frame, text=f"🖥️ {item}", font=("Arial", 10), cursor="hand2") 
             label.pack(side=LEFT, anchor="w", padx=(0, 5))
+            label.bind("<Button-1>", lambda e, t=item: on_item_click(t, raw_windows))
 
     tab_frame = ttk.Labelframe(
         container, text="브라우저 탭", style="Custom.TLabelframe", padding=10
@@ -180,8 +207,9 @@ def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
                 command=lambda title=item: on_close_item_click(title) 
             )
             close_button.pack(side=RIGHT, padx=5)
-            label = ttk.Label(item_frame, text=f"🌐 {item}", font=("Arial", 10))
+            label = ttk.Label(item_frame, text=f"🌐 {item}", font=("Arial", 10), cursor="hand2")
             label.pack(side=LEFT, anchor="w", padx=(0, 5))
+            label.bind("<Button-1>", lambda e, t=item: on_item_click(t, raw_windows))
         
 
 def check_queue(root, tab_ai_parent, tab_raw_parent):

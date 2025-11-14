@@ -35,3 +35,27 @@ def close_window_by_title(title_to_close):
     except Exception as e:
         print(f"[창 닫기 오류] {e}")
         return False
+    
+# -------------------------------------------------
+# 창을 맨 앞으로 가져오는 함수 추가
+# -------------------------------------------------
+def activate_window_by_title(title_to_activate):
+    """제목과 일치하는 창을 맨 앞으로 가져옵니다 (Focus)."""
+    try:
+        windows = gw.getWindowsWithTitle(title_to_activate)
+        if windows:
+            window = windows[0]
+            # 1. 최소화 상태라면 원래 크기로 복구
+            if window.isMinimized:
+                window.restore()
+            # 2. 창을 활성화 (맨 앞으로)
+            window.activate()
+            print(f"'{title_to_activate}' 창을 활성화했습니다.")
+            return True
+        else:
+            print(f"'{title_to_activate}' 창을 찾을 수 없습니다.")
+            return False
+    except Exception as e:
+        # pygetwindow는 권한 문제로 가끔 오류를 뱉을 수 있음
+        print(f"[창 활성화 오류] {e}")
+        return False
