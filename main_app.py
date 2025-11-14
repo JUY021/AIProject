@@ -189,6 +189,46 @@ def on_deselect_all_in_group(items_titles):
             selected_items_set.remove(title)
     ui_queue.put({'type': 'force_live_refresh'}) # UI 갱신
 
+# --- [신규 기능] 탭 전체 선택/해제 ---
+def on_select_all_in_ai_tab(ai_summary_json):
+    """(신규) '관련 작업' 탭의 모든 항목을 선택합니다."""
+    print("[선택] '관련 작업' 탭 전체 선택")
+    for group in ai_summary_json:
+        for title in group.get('items', []):
+            selected_items_set.add(title)
+    ui_queue.put({'type': 'force_live_refresh'})
+
+def on_deselect_all_in_ai_tab(ai_summary_json):
+    """(신규) '관련 작업' 탭의 모든 항목을 해제합니다."""
+    print("[선택] '관련 작업' 탭 전체 해제")
+    for group in ai_summary_json:
+        for title in group.get('items', []):
+            if title in selected_items_set:
+                selected_items_set.remove(title)
+    ui_queue.put({'type': 'force_live_refresh'})
+
+def on_select_all_in_raw_tab(raw_tabs_data, raw_windows):
+    """(신규) '전체 목록' 탭의 모든 항목을 선택합니다."""
+    print("[선택] '전체 목록' 탭 전체 선택")
+    for title in raw_windows:
+        selected_items_set.add(title)
+    for tab in raw_tabs_data:
+        selected_items_set.add(tab['title'])
+    ui_queue.put({'type': 'force_live_refresh'})
+
+def on_deselect_all_in_raw_tab(raw_tabs_data, raw_windows):
+    """(신규) '전체 목록' 탭의 모든 항목을 해제합니다."""
+    print("[선택] '전체 목록' 탭 전체 해제")
+    for title in raw_windows:
+        if title in selected_items_set:
+            selected_items_set.remove(title)
+    for tab in raw_tabs_data:
+        if tab['title'] in selected_items_set:
+            selected_items_set.remove(tab['title'])
+    ui_queue.put({'type': 'force_live_refresh'})
+# --- [신규 기능 끝] ---
+
+
 def on_save_selected_click(root):
     """(선택 저장 콜백 - 수정 없음)"""
     global selected_items_set, global_last_raw_tabs_data, global_last_raw_windows
@@ -248,7 +288,7 @@ def on_close_selected_click():
 # -------------------------------------------------------------------
 
 def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_windows):
-    """(탭 1) "관련 작업" 탭 (접기/펴기 기능 추가)"""
+    """(탭 1) "관련 작업" 탭 (접기/펴기, 탭 전체선택, 버튼 텍스트 수정)"""
     global selected_items_set
     print(f"[DEBUG] 'AI 요약 탭' UI 재생성... (선택 {len(selected_items_set)}개 복원)")
     
@@ -261,6 +301,27 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
 
     url_lookup = {tab['title']: tab['url'] for tab in raw_tabs_data}
     current_tab_titles = list(url_lookup.keys())
+
+    # --- [신규] '탭' 전체 선택/해제 버튼 ---
+    tab_actions_frame = ttk.Frame(container)
+    tab_actions_frame.pack(fill=X, padx=5, pady=(5, 10))
+    
+    tab_select_all_btn = ttk.Button(
+        tab_actions_frame, text="탭 전체 선택", bootstyle="info",
+        command=lambda js=ai_summary_json: on_select_all_in_ai_tab(js)
+    )
+    tab_select_all_btn.pack(side=LEFT, fill=X, expand=True, padx=(0, 5))
+    
+    tab_deselect_all_btn = ttk.Button(
+        tab_actions_frame, text="탭 전체 해제", bootstyle="warning",
+        command=lambda js=ai_summary_json: on_deselect_all_in_ai_tab(js)
+    )
+    tab_deselect_all_btn.pack(side=LEFT, fill=X, expand=True, padx=(5, 0))
+    # --- [신규 끝] ---
+    
+    # 구분선
+    ttk.Separator(container).pack(fill=X, padx=5, pady=5)
+
 
     if not ai_summary_json:
         ttk.Label(container, text="요약할 작업이 없습니다.", font=("Arial", 12)).pack(pady=10)
@@ -280,16 +341,14 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
             top_frame = ttk.Frame(group_frame)
             top_frame.pack(fill=X, anchor="w", padx=0)
             
-            # --- [신규] 토글 버튼 (가장 왼쪽) ---
             toggle_btn = ttk.Button(
                 top_frame, text="▼", bootstyle="light-outline", width=2
             )
             toggle_btn.pack(side=LEFT, padx=(0, 5), pady=(0, 10))
-            # --- [신규 끝] ---
             
             summary_label = ttk.Label(
                 top_frame, text=summary, 
-                font=("Arial", 10, "italic"), wraplength=350 # 버튼 공간 확보
+                font=("Arial", 10, "italic"), wraplength=300 # 버튼 공간 확보
             )
             summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
@@ -306,39 +365,37 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     hydrated_items_list.append({"type": "unknown", "title": title})
             hydrated_group_data['items'] = hydrated_items_list
             
-            # (그룹 버튼 - 수정 없음)
+            # --- [수정] 그룹 버튼 (텍스트 변경, 너비 조정) ---
             group_close_button = ttk.Button(
-                top_frame, text="닫기", bootstyle="danger-outline", width=4,
+                top_frame, text="전체 닫기", bootstyle="danger-outline", width=8,
                 command=lambda current_items=items_titles_only: on_close_group_click(current_items)
             )
             group_close_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
 
             group_save_button = ttk.Button(
-                top_frame, text="저장", bootstyle="success-outline", width=4,
+                top_frame, text="전체 저장", bootstyle="success-outline", width=8,
                 command=lambda data=hydrated_group_data: on_save_group_click(data)
             )
             group_save_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
 
             deselect_all_btn = ttk.Button(
-                top_frame, text="해제", bootstyle="warning-outline", width=4,
+                top_frame, text="전체 해제", bootstyle="warning-outline", width=8,
                 command=lambda items=items_titles_only: on_deselect_all_in_group(items)
             )
             deselect_all_btn.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
             
             select_all_btn = ttk.Button(
-                top_frame, text="선택", bootstyle="info-outline", width=4,
+                top_frame, text="전체 선택", bootstyle="info-outline", width=8,
                 command=lambda items=items_titles_only: on_select_all_in_group(items)
             )
             select_all_btn.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
-            # --- [버튼 끝] ---
+            # --- [수정 끝] ---
 
 
-            # --- [신규] 토글 대상이 될 '내부 컨텐츠 프레임' ---
+            # (내부 컨텐츠 프레임 - 수정 없음)
             inner_content_frame = ttk.Frame(group_frame)
             inner_content_frame.pack(fill=X, padx=0, pady=0)
-            # --- [신규 끝] ---
 
-            # --- [수정] 항목 리스트를 'inner_content_frame' 안에 배치 ---
             if not items_titles_only:
                 ttk.Label(inner_content_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
             else:
@@ -347,7 +404,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     if item_title in raw_windows: icon = "🖥️"
                     elif item_title in current_tab_titles: icon = "🌐"
                     
-                    item_frame = ttk.Frame(inner_content_frame) # [수정]
+                    item_frame = ttk.Frame(inner_content_frame) 
                     item_frame.pack(fill=X, padx=10) 
                     
                     var = tk.BooleanVar()
@@ -373,15 +430,11 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     label.pack(side=LEFT, anchor="w", padx=(0, 5)) 
                     label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
             
-            # --- [신규] 토글 버튼에 명령 연결 ---
             toggle_btn.config(command=lambda f=inner_content_frame, b=toggle_btn: toggle_frame(f, b))
-            # --- [신규 끝] ---
-# --- [수정 끝] ---
 
 
-# --- [수정] '전체 목록 탭'에 접기/펴기 기능 추가 ---
 def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
-    """(탭 2) "전체 목록" 탭 (접기/펴기 기능 추가)"""
+    """(탭 2) "전체 목록" 탭 (접기/펴기, 탭 전체선택, 버튼 텍스트 수정)"""
     global selected_items_set
     print(f"[DEBUG] '전체 목록 탭' UI 재생성... (선택 {len(selected_items_set)}개 복원)")
     
@@ -391,6 +444,26 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container
 
+    # --- [신규] '탭' 전체 선택/해제 버튼 ---
+    tab_actions_frame = ttk.Frame(container)
+    tab_actions_frame.pack(fill=X, padx=5, pady=(5, 10))
+    
+    tab_select_all_btn = ttk.Button(
+        tab_actions_frame, text="탭 전체 선택", bootstyle="info",
+        command=lambda tabs=raw_tabs_data, wins=raw_windows: on_select_all_in_raw_tab(tabs, wins)
+    )
+    tab_select_all_btn.pack(side=LEFT, fill=X, expand=True, padx=(0, 5))
+    
+    tab_deselect_all_btn = ttk.Button(
+        tab_actions_frame, text="탭 전체 해제", bootstyle="warning",
+        command=lambda tabs=raw_tabs_data, wins=raw_windows: on_deselect_all_in_raw_tab(tabs, wins)
+    )
+    tab_deselect_all_btn.pack(side=LEFT, fill=X, expand=True, padx=(5, 0))
+    # --- [신규 끝] ---
+
+    # 구분선
+    ttk.Separator(container).pack(fill=X, padx=5, pady=5)
+    
     # (프로그램 창 부분 - 수정됨)
     prog_frame = ttk.Labelframe(
         container, text="프로그램 창", style="Custom.TLabelframe", padding=10
@@ -400,35 +473,33 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     prog_btn_frame = ttk.Frame(prog_frame)
     prog_btn_frame.pack(fill=X, padx=10, pady=(0, 5))
     
-    # --- [신규] 토글 버튼 (가장 왼쪽) ---
     prog_toggle_btn = ttk.Button(
         prog_btn_frame, text="▼", bootstyle="light-outline", width=2
     )
     prog_toggle_btn.pack(side=LEFT, padx=(0, 5))
-    # --- [신규 끝] ---
     
+    # --- [수정] 텍스트 변경 ---
     prog_select_all_btn = ttk.Button(
-        prog_btn_frame, text="전체 선택", bootstyle="info-outline",
+        prog_btn_frame, text="그룹 선택", bootstyle="info-outline",
         command=lambda items=raw_windows: on_select_all_in_group(items)
     )
     prog_select_all_btn.pack(side=LEFT, padx=(0, 5))
     
     prog_deselect_all_btn = ttk.Button(
-        prog_btn_frame, text="전체 해제", bootstyle="warning-outline",
+        prog_btn_frame, text="그룹 해제", bootstyle="warning-outline",
         command=lambda items=raw_windows: on_deselect_all_in_group(items)
     )
     prog_deselect_all_btn.pack(side=LEFT)
+    # --- [수정 끝] ---
     
-    # --- [신규] 토글 대상 '프로그램 항목 프레임' ---
     prog_items_frame = ttk.Frame(prog_frame)
     prog_items_frame.pack(fill=X, padx=0, pady=0)
-    # --- [신규 끝] ---
     
     if not raw_windows:
         ttk.Label(prog_items_frame, text="- 열린 프로그램이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
         for item_title in raw_windows: 
-            item_frame = ttk.Frame(prog_items_frame) # [수정]
+            item_frame = ttk.Frame(prog_items_frame) 
             item_frame.pack(fill=X, padx=10)
             
             var = tk.BooleanVar()
@@ -450,9 +521,7 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
             label.pack(side=LEFT, anchor="w", padx=(0, 5))
             label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
             
-    # --- [신규] 토글 버튼 명령 연결 ---
     prog_toggle_btn.config(command=lambda f=prog_items_frame, b=prog_toggle_btn: toggle_frame(f, b))
-    # --- [신규 끝] ---
 
 
     # (브라우저 탭 부분 - 수정됨)
@@ -464,37 +533,36 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     tab_btn_frame = ttk.Frame(tab_frame)
     tab_btn_frame.pack(fill=X, padx=10, pady=(0, 5))
     
-    # --- [신규] 토글 버튼 (가장 왼쪽) ---
     tab_toggle_btn = ttk.Button(
         tab_btn_frame, text="▼", bootstyle="light-outline", width=2
     )
     tab_toggle_btn.pack(side=LEFT, padx=(0, 5))
-    # --- [신규 끝] ---
     
     tab_titles_only = [tab['title'] for tab in raw_tabs_data]
+    
+    # --- [수정] 텍스트 변경 ---
     tab_select_all_btn = ttk.Button(
-        tab_btn_frame, text="전체 선택", bootstyle="info-outline",
+        tab_btn_frame, text="그룹 선택", bootstyle="info-outline",
         command=lambda items=tab_titles_only: on_select_all_in_group(items)
     )
     tab_select_all_btn.pack(side=LEFT, padx=(0, 5))
     
     tab_deselect_all_btn = ttk.Button(
-        tab_btn_frame, text="전체 해제", bootstyle="warning-outline",
+        tab_btn_frame, text="그룹 해제", bootstyle="warning-outline",
         command=lambda items=tab_titles_only: on_deselect_all_in_group(items)
     )
     tab_deselect_all_btn.pack(side=LEFT)
+    # --- [수정 끝] ---
     
-    # --- [신규] 토글 대상 '탭 항목 프레임' ---
     tab_items_frame = ttk.Frame(tab_frame)
     tab_items_frame.pack(fill=X, padx=0, pady=0)
-    # --- [신규 끝] ---
     
     if not raw_tabs_data:
         ttk.Label(tab_items_frame, text="- 열린 탭이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
         for tab_dict in raw_tabs_data:
             item_title = tab_dict['title']
-            item_frame = ttk.Frame(tab_items_frame) # [수정]
+            item_frame = ttk.Frame(tab_items_frame) 
             item_frame.pack(fill=X, padx=10)
             
             var = tk.BooleanVar()
@@ -516,10 +584,7 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
             label.pack(side=LEFT, anchor="w", padx=(0, 5))
             label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
             
-    # --- [신규] 토글 버튼 명령 연결 ---
     tab_toggle_btn.config(command=lambda f=tab_items_frame, b=tab_toggle_btn: toggle_frame(f, b))
-    # --- [신규 끝] ---
-# --- [수정 끝] ---
 
 
 def toggle_frame(frame, button):
