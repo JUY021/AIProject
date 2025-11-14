@@ -108,9 +108,22 @@ def get_summary_from_gemini(tab_titles, window_titles):
         # 5. [수정] AI가 리스트 괄호([ ])를 빠뜨린 경우 수동 복구
         #    (시작이 '{' 이면, AI가 1개 이상의 객체를 보냈지만 
         #     리스트로 감싸지 않은 것으로 간주하고 강제로 래핑)
-        if cleaned_json.startswith('{'):
-             print("[DEBUG] AI가 리스트 괄호 '['와 ']'를 빠뜨린 것으로 보입니다. 수동 복구합니다...")
-             cleaned_json = '[' + cleaned_json + ']'
+        starts_with_bracket = cleaned_json.startswith('[')
+        ends_with_bracket = cleaned_json.endswith(']')
+        starts_with_brace = cleaned_json.startswith('{')
+        ends_with_brace = cleaned_json.endswith('}')
+
+        if starts_with_bracket and ends_with_bracket:
+            # "[ { ... } ]" -> 정상
+            pass
+        elif starts_with_brace and ends_with_brace:
+            # "{ ... }" 또는 "{...}, {...}" -> AI가 양쪽 괄호를 모두 빠뜨림
+            print("[DEBUG] AI가 리스트 괄호 '['와 ']'를 빠뜨린 것으로 보입니다. 수동 복구합니다...")
+            cleaned_json = '[' + cleaned_json + ']'
+        elif starts_with_brace and ends_with_bracket:
+            # "{ ... } ]" -> AI가 여는 괄호 '['를 빠뜨림 (이번 오류 케이스)
+            print("[DEBUG] AI가 여는 괄호 '['를 빠뜨린 것으로 보입니다. 수동 복구합니다...")
+            cleaned_json = '[' + cleaned_json
         
         # 6. 파싱
         parsed_json = json.loads(cleaned_json)

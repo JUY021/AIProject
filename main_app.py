@@ -19,8 +19,6 @@ from ui_components import ScrollableTab
 ui_queue = Queue()
 command_queue = Queue()
 job_queue = Queue()
-# [수정] 'is_ui_updating' 잠금 변수는 더 이상 필요 없습니다.
-# is_ui_updating = False 
 
 # -------------------------------------------------------------------
 # (AI 작업자 스레드... 동일)
@@ -64,7 +62,7 @@ def ai_worker_thread(job_q, ui_q):
 # -------------------------------------------------------------------
 
 # -------------------------------------------------------------------
-# 항목 클릭 시 실행될 함수 (이동/활성화)
+# 항목 클릭 시 실행될 함수 (이동/활성화/닫기)
 # -------------------------------------------------------------------
 def on_item_click(title, raw_windows):
     """
@@ -86,11 +84,27 @@ def on_item_click(title, raw_windows):
 def on_close_item_click(title):
     """(통합 닫기 버튼 콜백)"""
     print(f"'{title}' 항목 닫기 요청...")
+    # PC 창 닫기 시도
     close_window_by_title(title)
+    # 브라우저 탭 닫기 시도 (어차피 둘 중 하나만 성공함)
     command_queue.put({ "action": "close_tab", "title": title })
 
+# --- [신규 기능] ---
+def on_close_group_click(items_list):
+    """(신규) AI가 분류한 그룹 전체를 닫습니다."""
+    print(f"'{len(items_list)}'개 항목의 그룹 전체 닫기 요청...")
+    
+    if not items_list:
+        return
+        
+    for title in items_list:
+        # 이미 개별 닫기 로직이 있으므로 재사용
+        on_close_item_click(title)
+# --- [신규 기능 끝] ---
+
+
 def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
-    """(탭 1) "관련 작업" 탭을 'Labelframe'(Collapse 대체) UI로 새로 그립니다."""
+    """(탭 1) "관련 작업" 탭을 'Labelframe' UI로 새로 그립니다."""
     print(f"[DEBUG] 'AI 요약 탭' UI 재생성 (Collapse 미사용)...")
     
     # 1. [TclError 해결] 탭의 이전 내용을 '통째로' 파괴
@@ -113,21 +127,40 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
 
             # -------------------------------------------------
             # [수정] 'Collapse' 위젯을 'Labelframe'으로 대체
-            # (라이브러리 꼬임 문제 우회)
             # -------------------------------------------------
             group_frame = ttk.Labelframe(
                 master=container,
                 text=category_name, # 제목
-                style="Custom.TLabelframe", # "전체 목록" 탭과 동일한 스타일 적용
+                style="Custom.TLabelframe",
                 padding=10
             )
             group_frame.pack(fill=X, pady=5, padx=5)
 
-            # 1. 요약 (바로 보임)
-            summary_label = ttk.Label(group_frame, text=summary, font=("Arial", 10, "italic"), wraplength=550)
-            summary_label.pack(anchor="w", fill=X, pady=(0, 10), padx=5)
+            # --- [수정] 요약 레이블과 그룹 닫기 버튼을 한 줄에 배치 ---
+            top_frame = ttk.Frame(group_frame)
+            top_frame.pack(fill=X, anchor="w", padx=0)
+
+            # 1. 요약 (왼쪽 정렬)
+            summary_label = ttk.Label(
+                top_frame, 
+                text=summary, 
+                font=("Arial", 10, "italic"), 
+                wraplength=500 # 너비 고정
+            )
+            summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
-            # 2. 항목 리스트 (바로 보임)
+            # 2. [신규] 그룹 닫기 버튼 (오른쪽 정렬)
+            group_close_button = ttk.Button(
+                top_frame,
+                text="그룹 닫기",
+                bootstyle="danger-outline", # 'danger'보다 덜 부담스러운 'outline'
+                width=10,
+                command=lambda current_items=items: on_close_group_click(current_items)
+            )
+            group_close_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
+            # --- [수정 끝] ---
+
+            # 3. 항목 리스트 (기존과 동일)
             if not items:
                 ttk.Label(group_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
             else:
@@ -136,7 +169,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
                     if item in raw_windows: icon = "🖥️"
                     elif item in raw_tabs: icon = "🌐"
                     
-                    item_frame = ttk.Frame(group_frame) # group_frame에 속함
+                    item_frame = ttk.Frame(group_frame)
                     item_frame.pack(fill=X, padx=10) 
                     
                     close_button = ttk.Button(
@@ -149,11 +182,10 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
                         item_frame, 
                         text=f"{icon} {item}", 
                         font=("Arial", 10),
-                        cursor="hand2" # 마우스 올리면 손가락 모양
+                        cursor="hand2"
                     )
                     label.pack(side=LEFT, anchor="w", padx=(0, 5))
                     
-                    # [수정] 클릭 이벤트 바인딩 (<Button-1> = 좌클릭)
                     label.bind("<Button-1>", lambda e, t=item: on_item_click(t, raw_windows))
 
 
@@ -170,7 +202,7 @@ def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container # 내용물이 들어갈 곳
 
-    # 3. 새 카드로 채우기
+    # 3. 새 카드로 채우기 (기존과 동일)
     prog_frame = ttk.Labelframe(
         container, text="프로그램 창", style="Custom.TLabelframe", padding=10
     )
@@ -214,7 +246,6 @@ def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
 
 def check_queue(root, tab_ai_parent, tab_raw_parent):
     """100ms마다 큐를 확인하여 모든 UI 탭을 업데이트합니다."""
-    # [수정] 'is_ui_updating' 잠금 제거
     
     try:
         message_data = ui_queue.get_nowait()
@@ -223,7 +254,6 @@ def check_queue(root, tab_ai_parent, tab_raw_parent):
         if message_type == 'raw_update':
             print("[DEBUG] UI 큐: '실시간' 데이터 수신.")
             try:
-                # [수정] '부모 프레임'을 전달하여 UI를 통째로 다시 그림
                 update_raw_list_tab(tab_raw_parent, message_data.get('raw_tabs', []), message_data.get('raw_windows', []))
             except Exception as e:
                 print(f"[DEBUG] !!! 전체 목록 탭 업데이트 중 오류 발생: {e} !!!")
@@ -231,7 +261,6 @@ def check_queue(root, tab_ai_parent, tab_raw_parent):
         elif message_type == 'ai_update':
             print("[DEBUG] UI 큐: 'AI 결과' 데이터 수신.")
             try:
-                # [수정] '부모 프레임'을 전달하여 UI를 통째로 다시 그림
                 update_ai_summary_tab(
                     tab_ai_parent, 
                     message_data.get('ai_summary', []),
@@ -249,8 +278,7 @@ def check_queue(root, tab_ai_parent, tab_raw_parent):
     except Exception as e:
         print(f"Check_queue 오류: {e}")
     finally:
-        # [수정] 'is_ui_updating = False' 제거
-        root.after(100, check_queue, root, tab_ai_parent, tab_raw_parent) # 다음 큐 확인 예약
+        root.after(100, check_queue, root, tab_ai_parent, tab_raw_parent)
 
 # -------------------------------------------------------------------
 # 프로그램의 진짜 시작점
@@ -296,14 +324,14 @@ if __name__ == "__main__":
     notebook.pack(fill=BOTH, expand=YES, padx=10, pady=(0, 10))
 
     # -------------------------------------------------
-    # [수정] TclError를 해결하기 위해, ScrollableTab을 직접 추가하지 않고
-    # '부모 프레임'만 추가합니다. (check_queue가 이 프레임을 채울 것입니다)
+    # (부모 프레임 추가... 동일)
     # -------------------------------------------------
     tab_ai_parent_frame = ttk.Frame(notebook, padding=0)
     tab_raw_parent_frame = ttk.Frame(notebook, padding=0)
     
-    notebook.add(tab_raw_parent_frame, text="전체 목록 (원본)")
+    # --- [수정] 제안대로 AI 탭을 기본 탭으로 설정 (순서 변경) ---
     notebook.add(tab_ai_parent_frame, text="관련 작업 (AI 요약)")
+    notebook.add(tab_raw_parent_frame, text="전체 목록 (원본)")
     
     root.after(100, check_queue, root, tab_ai_parent_frame, tab_raw_parent_frame)
 
