@@ -8,14 +8,11 @@ import time
 import threading 
 from queue import Empty 
 from window_utils import get_open_windows
-# [수정] AI 프로세서를 직접 호출하지 않으므로 import 제거
 
 global_connected_clients = set() 
 last_processed_state = None
-# [수정] AI 관련 잠금(lock)이나 스레드(thread) 로직이 모두 제거됨
-# (이 로직은 main_app.py로 이동)
 
-async def handler(websocket, ui_queue, job_queue): # [수정] job_queue를 받음
+async def handler(websocket, ui_queue, job_queue):
     """(데이터 수신 핸들러) 클라이언트가 연결되면 호출되는 함수"""
     
     global last_processed_state, global_connected_clients 
@@ -28,43 +25,51 @@ async def handler(websocket, ui_queue, job_queue): # [수정] job_queue를 받�
             try:
                 # 1. 원본 데이터 수집
                 tab_list = json.loads(message)
-                tab_titles = [tab.get('title', '제목 없음') for tab in tab_list if tab.get('title')]
+                
+                # --- [수정] title만 뽑는 대신 (title, url) 딕셔너리 리스트 생성 ---
+                # (복원할 수 없는 chrome:// 탭 등은 제외)
+                tab_data = [
+                    {"title": tab.get('title'), "url": tab.get('url')} 
+                    for tab in tab_list 
+                    if tab.get('title') and tab.get('url') and not tab.get('url').startswith('chrome://')
+                ]
+                # -----------------------------------------------------------
+                
                 window_titles = get_open_windows()
                 
                 # 2. [캐시] 데이터 변경 감지
-                current_tabs_sorted = tuple(sorted(tab_titles))
+                # --- [수정] 캐시 키는 여전히 title만 사용 ---
+                current_tabs_sorted = tuple(sorted([t['title'] for t in tab_data]))
+                # ----------------------------------------
                 current_windows_sorted = tuple(sorted(window_titles))
                 current_state = (current_tabs_sorted, current_windows_sorted)
 
                 if current_state == last_processed_state:
                     continue 
                 
-                print("[DEBUG] 데이터 변경 감지.")
+                print("[DEBUG] 데이터 변경 감지 (URL 포함).")
                 last_processed_state = current_state
 
-                # -------------------------------------------------
-                # [수정] 데이터를 *두 개의 큐*로 분리해서 전송
-                # -------------------------------------------------
+                # 3. 큐로 데이터 전송
                 
                 # 1. "전체 목록" 탭을 위한 '실시간' 데이터
-                #    (AI와 상관없이 즉시 UI에 반영됨)
                 raw_data_for_ui = {
-                    'type': 'raw_update', # [신규] 메시지 타입
-                    'raw_tabs': tab_titles,
+                    'type': 'raw_update',
+                    # --- [수정] 변수명 변경: raw_tabs -> raw_tabs_data ---
+                    'raw_tabs_data': tab_data, 
                     'raw_windows': window_titles
                 }
                 ui_queue.put(raw_data_for_ui)
                 print("[DEBUG] '실시간' 데이터를 UI 큐에 전송.")
 
                 # 2. "AI 그룹핑" 탭을 위한 '작업 지시서'
-                #    (AI 작업자가 천천히 처리함)
                 job_data_for_ai = {
-                    'raw_tabs': tab_titles,
+                    # --- [수정] 변수명 변경: raw_tabs -> raw_tabs_data ---
+                    'raw_tabs_data': tab_data,
                     'raw_windows': window_titles
                 }
                 job_queue.put(job_data_for_ai)
                 print("[DEBUG] 'AI 작업'을 Job 큐에 전송.")
-                # -------------------------------------------------
                 
             except Exception as e:
                 print(f"핸들러 내부 오류 발생: {e}")
@@ -101,8 +106,7 @@ async def server_main(handler_with_args, command_queue):
         print("백그라운드 WebSocket 서버가 9090 포트에서 시작되었습니다.")
         await asyncio.Future()
 
-def start_server_thread(ui_queue, command_queue, job_queue): # [수정] job_queue 받기
+def start_server_thread(ui_queue, command_queue, job_queue):
     """백그라운드 스레드에서 WebSocket 서버를 실행합니다."""
-    # [수정] 핸들러에 job_queue도 전달
     handler_with_args = functools.partial(handler, ui_queue=ui_queue, job_queue=job_queue)
     asyncio.run(server_main(handler_with_args, command_queue))

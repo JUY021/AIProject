@@ -10,5 +10,37 @@
             "20212245_전우영 (1).pdf"
         ],
         "saved_at": "2025-11-15T02:41:01.529702"
+    },
+    {
+        "category": "대학 전공 학습",
+        "summary": "원격수업시스템과 PDF 자료로 '보안', 'IT 창업' 등 전공 기말고사를 준비하고 있습니다.",
+        "items": [
+            {
+                "type": "tab",
+                "title": "보안",
+                "url": "https://www.notion.so/2a3db61707d6805d9544d896f465564b"
+            },
+            {
+                "type": "tab",
+                "title": "07장_암호의 이해.pdf",
+                "url": "file:///C:/Users/wjsdn/OneDrive/Desktop/%EB%8F%99%EC%96%91/%EB%B3%B4%EC%95%88/07%EC%9E%A5_%EC%95%94%ED%98%B8%EC%9D%98%20%EC%9D%B4%ED%95%B4.pdf"
+            },
+            {
+                "type": "tab",
+                "title": "IT 창업 실무 기말",
+                "url": "https://www.notion.so/IT-2a0db61707d680428430f995f6f172aa"
+            },
+            {
+                "type": "tab",
+                "title": "동양미래대학교 원격수업시스템",
+                "url": "https://eclass.dongyang.ac.kr/mod/assign/view.php?id=476824"
+            },
+            {
+                "type": "tab",
+                "title": "20212245_전우영 (1).pdf",
+                "url": "file:///C:/Users/wjsdn/Downloads/20212245_%EC%A0%84%EC%9A%B0%EC%98%81%20(1).pdf"
+            }
+        ],
+        "saved_at": "2025-11-15T03:00:27.325117"
     }
 ]
