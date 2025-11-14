@@ -34,12 +34,18 @@ def save_session(group_data):
     # 3. 새 그룹을 리스트에 추가합니다.
     sessions.append(group_data)
     
-    # 4. 전체 리스트를 파일에 덮어씁니다.
+    # 4. 전체 리스트를 파일에 덮어씁니다. (overwrite 함수 재사용)
+    return overwrite_sessions(sessions)
+
+# --- [신규 기능] ---
+def overwrite_sessions(sessions_list):
+    """(신규) 전달받은 전체 세션 리스트를 파일에 덮어씁니다 (삭제/수정용)."""
     try:
         with open(SESSION_FILE, 'w', encoding='utf-8') as f:
-            json.dump(sessions, f, ensure_ascii=False, indent=4)
-        print(f"'{group_data.get('category')}' 그룹을 파일에 저장했습니다.")
+            json.dump(sessions_list, f, ensure_ascii=False, indent=4)
+        print(f"세션 파일을 덮어썼습니다. (총 {len(sessions_list)}개 그룹)")
         return True
     except IOError as e:
-        print(f"세션 파일({SESSION_FILE}) 저장 오류: {e}")
+        print(f"세션 파일({SESSION_FILE}) 덮어쓰기 오류: {e}")
         return False
+# --- [신규 기능 끝] ---

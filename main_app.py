@@ -14,7 +14,8 @@ from gemini_processor import configure_gemini, get_summary_from_gemini
 from websocket_server import start_server_thread
 from window_utils import close_window_by_title, activate_window_by_title
 from ui_components import ScrollableTab
-from session_utils import save_session, load_sessions
+# --- [수정] overwrite_sessions import 추가 ---
+from session_utils import save_session, load_sessions, overwrite_sessions
 
 # -------------------------------------------------------------------
 # (큐 정의... 동일)
@@ -63,7 +64,7 @@ def ai_worker_thread(job_q, ui_q):
             print(f"AI 작업자(Worker) 스레드 오류: {e}")
 
 # -------------------------------------------------------------------
-# (항목 클릭 함수... on_save_group_click까지 동일)
+# (항목 클릭 함수)
 # -------------------------------------------------------------------
 def on_item_click(title, raw_windows):
     """(항목 활성화/이동 콜백 - 수정 없음)"""
@@ -99,9 +100,8 @@ def on_save_group_click(group_data):
     else:
         print(f"'{category}' 그룹 저장 실패.")
 
-# --- [오류 수정] 구 버전 'str' 데이터 호환성 추가 ---
 def on_restore_group_click(items_data):
-    """(그룹 복원 콜백) 저장된 그룹을 복원합니다 (브라우저 탭만)."""
+    """(그룹 복원 콜백 - 수정 없음, 호환성 코드 포함)"""
     print(f"'{len(items_data)}'개 항목의 그룹 복원 요청... (탭만 복원 시도)")
     
     tabs_opened = 0
@@ -109,24 +109,64 @@ def on_restore_group_click(items_data):
         return
 
     for item in items_data:
-        # --- [수정] 'item'이 딕셔너리인지 먼저 확인 ---
         if isinstance(item, dict): 
-            # 'type'이 'tab'이고 'url' 키가 있는지 확인
             if item.get('type') == 'tab' and item.get('url'):
                 url_to_open = item.get('url')
                 print(f"  -> [탭 복원] {url_to_open}")
-                # 'open_tab' 명령을 background.js로 전송
                 command_queue.put({"action": "open_tab", "url": url_to_open})
                 tabs_opened += 1
             elif item.get('type') == 'window':
                 print(f"  -> [프로그램 복원] '{item.get('title')}' (지원되지 않음, 건너뜀)")
         else:
-            # 'item'이 딕셔너리가 아닌 'str' (문자열)인 경우 (구 버전 데이터)
             print(f"  -> [복원 불가] '{item}' (URL 정보가 없는 구 버전 데이터, 건너뜀)")
-        # --- [수정 끝] ---
             
     print(f"총 {tabs_opened}개의 탭 복원 명령을 전송했습니다.")
-# --- [오류 수정 끝] ---
+
+# --- [신규 기능] ---
+def on_restore_item_click(item_data):
+    """(신규) 저장된 개별 '탭' 항목을 복원합니다."""
+    print(f"[개별 복원] '{item_data.get('title')}' 요청...")
+    # (이미 on_restore_group_click 에서 검증된 로직)
+    if isinstance(item_data, dict) and item_data.get('type') == 'tab' and item_data.get('url'):
+        url_to_open = item_data.get('url')
+        print(f"  -> [탭 복원] {url_to_open}")
+        command_queue.put({"action": "open_tab", "url": url_to_open})
+    else:
+        print("  -> [복원 불가] 탭이 아니거나 URL 정보가 없습니다.")
+
+def on_delete_group_click(group_to_delete):
+    """(신규) 저장된 그룹을 'saved_sessions.json'에서 삭제합니다."""
+    category = group_to_delete.get('category', '알 수 없음')
+    # 'saved_at'은 session_utils.py에서 저장 시 추가한 고유 ID입니다.
+    saved_at_id = group_to_delete.get('saved_at') 
+    
+    if not saved_at_id:
+        print(f"'{category}' 그룹 삭제 실패: 고유 ID(saved_at)가 없습니다.")
+        return
+
+    print(f"'{category}' ({saved_at_id}) 그룹 삭제 요청...")
+    
+    # 1. 모든 세션 로드
+    all_sessions = load_sessions()
+    
+    # 2. 'saved_at' ID를 기준으로 해당 그룹을 '제외한' 새 리스트 생성
+    filtered_sessions = [
+        session for session in all_sessions 
+        if session.get('saved_at') != saved_at_id
+    ]
+    
+    # 3. 덮어쓰기
+    if len(filtered_sessions) < len(all_sessions):
+        success = overwrite_sessions(filtered_sessions) # session_utils 호출
+        if success:
+            print("그룹 삭제 완료. 탭을 갱신합니다.")
+            # 4. UI 갱신
+            ui_queue.put({'type': 'refresh_saved_tab'})
+        else:
+            print("파일 덮어쓰기에 실패하여 삭제를 중단합니다.")
+    else:
+        print("삭제할 그룹을 찾지 못했습니다.")
+# --- [신규 기능 끝] ---
 
 
 # -------------------------------------------------------------------
@@ -268,23 +308,19 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
             label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
 
 
-# --- [신규 기능] 접기/펴기 토글 함수 ---
 def toggle_frame(frame, button):
-    """프레임(내용)을 접거나 폅니다."""
+    """(접기/펴기 콜백 - 수정 없음)"""
     if frame.winfo_ismapped():
-        # 프레임이 보이면 -> 숨김
         frame.pack_forget()
-        button.config(text="▶") # 펴기 아이콘
+        button.config(text="▶") 
     else:
-        # 프레임이 숨겨져 있으면 -> 보임
         frame.pack(fill=X, anchor="w", padx=0, pady=(5,0))
-        button.config(text="▼") # 접기 아이콘
-# --- [신규 기능 끝] ---
+        button.config(text="▼")
 
 
-# --- [수정] update_saved_sessions_tab (오류 수정 + 접기 기능) ---
+# --- [수정] update_saved_sessions_tab (개별 복원 / 그룹 삭제 버튼 추가) ---
 def update_saved_sessions_tab(parent_frame):
-    """(탭 3 - 수정) "저장된 작업" 탭 (오류 수정 및 접기 기능 추가)"""
+    """(탭 3 - 수정) "저장된 작업" 탭 (개별 복원 / 그룹 삭제 추가)"""
     print(f"[DEBUG] '저장된 작업 탭' UI 재생성...")
 
     for widget in parent_frame.winfo_children():
@@ -319,79 +355,74 @@ def update_saved_sessions_tab(parent_frame):
             )
             group_frame.pack(fill=X, pady=5, padx=5)
 
-            # --- [수정] 요약/버튼/항목을 담을 '내부 프레임' (이 프레임을 접었다 폄) ---
-            inner_content_frame = ttk.Frame(group_frame)
-            # [신규] 기본은 펼쳐진 상태로 시작
-            inner_content_frame.pack(fill=X, anchor="w", padx=0, pady=(5,0)) 
-
-            # --- [수정] 'top_frame'을 'inner_content_frame' 안에 배치 ---
-            top_frame = ttk.Frame(inner_content_frame)
+            top_frame = ttk.Frame(group_frame)
             top_frame.pack(fill=X, anchor="w", padx=0)
 
             summary_label = ttk.Label(
                 top_frame, text=summary, 
-                font=("Arial", 10, "italic"), wraplength=400 
+                font=("Arial", 10, "italic"), wraplength=300 # 버튼 공간 확보
             )
             summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
+            # --- [신규] 버튼 3개 (pack 순서가 UI 표시 순서의 역순임) ---
+            
+            # 1. (가장 왼쪽) 접기/펴기
+            toggle_btn = ttk.Button(
+                top_frame, text="▼", bootstyle="light-outline", width=2
+            )
+            toggle_btn.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
+
+            # 2. (중간) 그룹 복원
             restore_button = ttk.Button(
                 top_frame,
-                text="그룹 복원 (탭만)",
+                text="그룹 복원", # (텍스트 짧게 수정)
                 bootstyle="primary-outline",
-                width=16, 
+                width=9, 
                 command=lambda items=items_data: on_restore_group_click(items)
             )
             restore_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
             
-            # --- [신규] '접기/펴기' 버튼 (Labelframe 제목줄에 추가) ---
-            # Labelframe 위젯 자체에는 버튼을 추가하기 어려우므로
-            # Labelframe 바로 위에 별도 프레임으로 제목줄을 흉내냅니다.
-            
-            # ... (이 방법은 Labelframe 구조와 충돌하므로, 
-            #     더 간단하게 요약(summary) 레이블 옆에 버튼을 추가합니다.)
-            
-            # (위치 재조정) '복원 버튼'보다 왼쪽에 '접기 버튼' 추가
-            toggle_btn = ttk.Button(
+            # 3. [신규] (가장 오른쪽) 그룹 삭제
+            group_delete_button = ttk.Button(
                 top_frame,
-                text="▼", # 기본 (접기)
-                bootstyle="light-outline",
-                width=2
+                text="그룹 삭제",
+                bootstyle="danger-outline", # 삭제 버튼
+                width=9,
+                # 람다에 'session_group' (고유 ID 포함) 전달
+                command=lambda group=session_group: on_delete_group_click(group)
             )
-            toggle_btn.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
-
-            # --- [신규] 'items_frame'을 'inner_content_frame' 안에 배치 ---
-            # (항목 리스트를 담을 별도 프레임)
-            items_frame = ttk.Frame(inner_content_frame)
+            group_delete_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
+            # --- [신규 끝] ---
+            
+            # (항목 리스트 프레임 - 수정 없음)
+            items_frame = ttk.Frame(group_frame)
             items_frame.pack(fill=X, padx=0, pady=0)
             
-            # --- [수정] 'items_data' (딕셔너리 리스트)를 순회 ---
             if not items_data:
                 ttk.Label(items_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
             else:
-                for item_data in items_data: # 변수명 변경
-                    item_list_frame = ttk.Frame(items_frame) # items_frame에 속함
+                for item_data in items_data:
+                    item_list_frame = ttk.Frame(items_frame)
                     item_list_frame.pack(fill=X, padx=10) 
                     
                     icon = "•"
                     item_title = ""
                     item_url = None
+                    is_tab = False # [신규] 개별 복원 버튼 표시용 플래그
 
-                    # --- [오류 수정] 'item_data'가 딕셔너리인지 문자열인지 확인 ---
                     if isinstance(item_data, dict):
-                        # 신규 데이터 ({"type": ..., "title": ...})
                         item_type = item_data.get('type', 'unknown')
                         item_title = item_data.get('title', '제목 없음')
                         
                         if item_type == 'tab':
                             icon = "🌐"
                             item_url = item_data.get('url')
+                            is_tab = True # 탭 확인
                         elif item_type == 'window':
                             icon = "🖥️"
                     else:
-                        # 구 버전 데이터 (단순 "문자열")
-                        item_title = str(item_data) # "Google"
-                        icon = "❓" # 구 버전 데이터임을 표시
-                    # --- [오류 수정 끝] ---
+                        item_title = str(item_data) 
+                        icon = "❓" 
 
                     label = ttk.Label(
                         item_list_frame, 
@@ -403,25 +434,25 @@ def update_saved_sessions_tab(parent_frame):
                     if item_url: 
                         url_label = ttk.Label(
                             item_list_frame,
-                            text=f"({item_url[:50]}...)",
+                            text=f"({item_url[:30]}...)", # 툴팁 길이 조절
                             font=("Arial", 9, "italic"),
                             bootstyle="secondary"
                         )
                         url_label.pack(side=LEFT, anchor="w", padx=5)
+                    
+                    # --- [신규] 개별 복원 버튼 ---
+                    if is_tab:
+                        restore_item_btn = ttk.Button(
+                            item_list_frame,
+                            text="복원",
+                            bootstyle="info-outline", # (개별 버튼 스타일)
+                            width=4,
+                            command=lambda item=item_data: on_restore_item_click(item)
+                        )
+                        restore_item_btn.pack(side=RIGHT, padx=5)
+                    # --- [신규 끝] ---
 
-            # --- [신규] 접기 버튼에 명령 연결 ---
-            # (요약 레이블, 복원 버튼, 항목 리스트 프레임이 모두 'inner_content_frame'에
-            #  포함되어야 하지만, 지금 구조가 복잡해졌으므로
-            #  '항목 리스트(items_frame)'만 접었다 폈다 하도록 수정합니다.)
-            
-            # (구조 재수정) top_frame과 items_frame을 담는 'inner_content_frame'을
-            # 토글하는 것이 아니라, 'items_frame'만 토글하도록 수정.
-            
-            # (최종 수정)
-            # 1. top_frame (요약, 버튼들)은 항상 보이게 둔다.
-            # 2. items_frame (항목 리스트)을 토글한다.
-            
-            # 'toggle_frame' 함수가 'items_frame'과 'toggle_btn'을 참조하도록 람다 수정
+            # (접기 버튼 명령 연결 - 수정 없음)
             toggle_btn.config(command=lambda f=items_frame, b=toggle_btn: toggle_frame(f, b))
 # --- [수정 끝] ---
 
