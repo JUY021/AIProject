@@ -30,7 +30,12 @@ selected_items_set = set()
 global_last_raw_tabs_data = []
 global_last_raw_windows = []
 global_last_ai_summary = []
-# --- (전역 변수 끝) ---
+
+# --- [수정] 탭별 검색어 (변수 선언만) ---
+global_search_query_ai = None
+global_search_query_raw = None
+global_search_query_saved = None
+# --- [수정 끝] ---
 
 # -------------------------------------------------------------------
 # (AI 작업자 스레드... 동일)
@@ -189,9 +194,8 @@ def on_deselect_all_in_group(items_titles):
             selected_items_set.remove(title)
     ui_queue.put({'type': 'force_live_refresh'}) # UI 갱신
 
-# --- [신규 기능] 탭 전체 선택/해제 ---
 def on_select_all_in_ai_tab(ai_summary_json):
-    """(신규) '관련 작업' 탭의 모든 항목을 선택합니다."""
+    """('AI 탭' 전체 선택 - 수정 없음)"""
     print("[선택] '관련 작업' 탭 전체 선택")
     for group in ai_summary_json:
         for title in group.get('items', []):
@@ -199,7 +203,7 @@ def on_select_all_in_ai_tab(ai_summary_json):
     ui_queue.put({'type': 'force_live_refresh'})
 
 def on_deselect_all_in_ai_tab(ai_summary_json):
-    """(신규) '관련 작업' 탭의 모든 항목을 해제합니다."""
+    """('AI 탭' 전체 해제 - 수정 없음)"""
     print("[선택] '관련 작업' 탭 전체 해제")
     for group in ai_summary_json:
         for title in group.get('items', []):
@@ -208,7 +212,7 @@ def on_deselect_all_in_ai_tab(ai_summary_json):
     ui_queue.put({'type': 'force_live_refresh'})
 
 def on_select_all_in_raw_tab(raw_tabs_data, raw_windows):
-    """(신규) '전체 목록' 탭의 모든 항목을 선택합니다."""
+    """('Raw 탭' 전체 선택 - 수정 없음)"""
     print("[선택] '전체 목록' 탭 전체 선택")
     for title in raw_windows:
         selected_items_set.add(title)
@@ -217,7 +221,7 @@ def on_select_all_in_raw_tab(raw_tabs_data, raw_windows):
     ui_queue.put({'type': 'force_live_refresh'})
 
 def on_deselect_all_in_raw_tab(raw_tabs_data, raw_windows):
-    """(신규) '전체 목록' 탭의 모든 항목을 해제합니다."""
+    """('Raw 탭' 전체 해제 - 수정 없음)"""
     print("[선택] '전체 목록' 탭 전체 해제")
     for title in raw_windows:
         if title in selected_items_set:
@@ -226,7 +230,6 @@ def on_deselect_all_in_raw_tab(raw_tabs_data, raw_windows):
         if tab['title'] in selected_items_set:
             selected_items_set.remove(tab['title'])
     ui_queue.put({'type': 'force_live_refresh'})
-# --- [신규 기능 끝] ---
 
 
 def on_save_selected_click(root):
@@ -283,13 +286,25 @@ def on_close_selected_click():
     ui_queue.put({'type': 'force_live_refresh'})
 # --- [함수 끝] ---
 
+
+# --- [신규] 검색창 Enter 키 이벤트 핸들러 ---
+def on_search_enter(event, tab_name):
+    """(신규) 검색창에서 Enter키를 누르면 UI 갱신을 요청합니다."""
+    print(f"[검색] {tab_name} 탭 검색 실행...")
+    if tab_name == 'saved':
+        ui_queue.put({'type': 'refresh_saved_tab'})
+    else:
+        ui_queue.put({'type': 'force_live_refresh'})
+# --- [신규 끝] ---
+
+
 # -------------------------------------------------------------------
 # (UI 업데이트 함수)
 # -------------------------------------------------------------------
 
 def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_windows):
-    """(탭 1) "관련 작업" 탭 (접기/펴기, 탭 전체선택, 버튼 텍스트 수정)"""
-    global selected_items_set
+    """(탭 1) "관련 작업" 탭 (검색창 추가, 필터링 로직 추가)"""
+    global selected_items_set, global_search_query_ai
     print(f"[DEBUG] 'AI 요약 탭' UI 재생성... (선택 {len(selected_items_set)}개 복원)")
     
     for widget in parent_frame.winfo_children():
@@ -301,6 +316,18 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
 
     url_lookup = {tab['title']: tab['url'] for tab in raw_tabs_data}
     current_tab_titles = list(url_lookup.keys())
+    
+    # --- [신규] 검색창 프레임 ---
+    search_frame = ttk.Frame(container)
+    search_frame.pack(fill=X, padx=5, pady=(5, 0))
+    
+    search_label = ttk.Label(search_frame, text="검색:")
+    search_label.pack(side=LEFT, padx=(0, 5))
+    
+    search_entry = ttk.Entry(search_frame, textvariable=global_search_query_ai)
+    search_entry.pack(side=LEFT, fill=X, expand=True)
+    search_entry.bind("<Return>", lambda e: on_search_enter(e, 'ai'))
+    # --- [신규 끝] ---
 
     # --- [신규] '탭' 전체 선택/해제 버튼 ---
     tab_actions_frame = ttk.Frame(container)
@@ -317,16 +344,32 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
         command=lambda js=ai_summary_json: on_deselect_all_in_ai_tab(js)
     )
     tab_deselect_all_btn.pack(side=LEFT, fill=X, expand=True, padx=(5, 0))
-    # --- [신규 끝] ---
     
-    # 구분선
     ttk.Separator(container).pack(fill=X, padx=5, pady=5)
 
+    # --- [신규] 검색 필터링 로직 ---
+    query = global_search_query_ai.get().lower()
+    filtered_summary = ai_summary_json
+    
+    if query:
+        print(f"  -> 'AI 요약' 탭 '{query}'로 필터링")
+        filtered_summary = []
+        for group in ai_summary_json:
+            # 카테고리, 요약, 또는 항목 리스트 중 하나라도 일치하면 그룹 포함
+            if (query in group.get('category', '').lower() or
+                query in group.get('summary', '').lower() or
+                any(query in item.lower() for item in group.get('items', []))):
+                filtered_summary.append(group)
+    # --- [신규 끝] ---
 
-    if not ai_summary_json:
-        ttk.Label(container, text="요약할 작업이 없습니다.", font=("Arial", 12)).pack(pady=10)
+    if not filtered_summary:
+        if query:
+            ttk.Label(container, text=f"'{query}'에 대한 검색 결과가 없습니다.", font=("Arial", 12)).pack(pady=10)
+        else:
+            ttk.Label(container, text="요약할 작업이 없습니다.", font=("Arial", 12)).pack(pady=10)
     else:
-        for category_group in ai_summary_json:
+        # [수정] 'ai_summary_json' 대신 'filtered_summary' 사용
+        for category_group in filtered_summary:
             category_name = category_group.get('category', '알 수 없음')
             summary = category_group.get('summary', '요약 없음')
             items_titles_only = category_group.get('items', [])
@@ -337,7 +380,6 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
             )
             group_frame.pack(fill=X, pady=5, padx=5)
 
-            # (상단 프레임 - 버튼 추가)
             top_frame = ttk.Frame(group_frame)
             top_frame.pack(fill=X, anchor="w", padx=0)
             
@@ -348,11 +390,10 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
             
             summary_label = ttk.Label(
                 top_frame, text=summary, 
-                font=("Arial", 10, "italic"), wraplength=300 # 버튼 공간 확보
+                font=("Arial", 10, "italic"), wraplength=300
             )
             summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
-            # (데이터 강화 로직 - 수정 없음)
             hydrated_group_data = json.loads(json.dumps(category_group))
             hydrated_items_list = [] 
             for title in items_titles_only:
@@ -365,7 +406,6 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     hydrated_items_list.append({"type": "unknown", "title": title})
             hydrated_group_data['items'] = hydrated_items_list
             
-            # --- [수정] 그룹 버튼 (텍스트 변경, 너비 조정) ---
             group_close_button = ttk.Button(
                 top_frame, text="전체 닫기", bootstyle="danger-outline", width=8,
                 command=lambda current_items=items_titles_only: on_close_group_click(current_items)
@@ -389,10 +429,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                 command=lambda items=items_titles_only: on_select_all_in_group(items)
             )
             select_all_btn.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
-            # --- [수정 끝] ---
 
-
-            # (내부 컨텐츠 프레임 - 수정 없음)
             inner_content_frame = ttk.Frame(group_frame)
             inner_content_frame.pack(fill=X, padx=0, pady=0)
 
@@ -434,8 +471,8 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
 
 
 def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
-    """(탭 2) "전체 목록" 탭 (접기/펴기, 탭 전체선택, 버튼 텍스트 수정)"""
-    global selected_items_set
+    """(탭 2) "전체 목록" 탭 (검색창 추가, 필터링 로직 추가)"""
+    global selected_items_set, global_search_query_raw
     print(f"[DEBUG] '전체 목록 탭' UI 재생성... (선택 {len(selected_items_set)}개 복원)")
     
     for widget in parent_frame.winfo_children():
@@ -443,6 +480,18 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     scroll_tab = ScrollableTab(parent_frame, padding=0)
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container
+
+    # --- [신규] 검색창 프레임 ---
+    search_frame = ttk.Frame(container)
+    search_frame.pack(fill=X, padx=5, pady=(5, 0))
+    
+    search_label = ttk.Label(search_frame, text="검색:")
+    search_label.pack(side=LEFT, padx=(0, 5))
+    
+    search_entry = ttk.Entry(search_frame, textvariable=global_search_query_raw)
+    search_entry.pack(side=LEFT, fill=X, expand=True)
+    search_entry.bind("<Return>", lambda e: on_search_enter(e, 'raw'))
+    # --- [신규 끝] ---
 
     # --- [신규] '탭' 전체 선택/해제 버튼 ---
     tab_actions_frame = ttk.Frame(container)
@@ -460,11 +509,22 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     )
     tab_deselect_all_btn.pack(side=LEFT, fill=X, expand=True, padx=(5, 0))
     # --- [신규 끝] ---
-
-    # 구분선
-    ttk.Separator(container).pack(fill=X, padx=5, pady=5)
     
-    # (프로그램 창 부분 - 수정됨)
+    ttk.Separator(container).pack(fill=X, padx=5, pady=5)
+
+    # --- [신규] 검색 필터링 로직 ---
+    query = global_search_query_raw.get().lower()
+    filtered_windows = raw_windows
+    filtered_tabs = raw_tabs_data
+    
+    if query:
+        print(f"  -> '전체 목록' 탭 '{query}'로 필터링")
+        filtered_windows = [w for w in raw_windows if query in w.lower()]
+        filtered_tabs = [t for t in raw_tabs_data if query in t['title'].lower()]
+    # --- [신규 끝] ---
+
+
+    # (프로그램 창 부분 - 'filtered_windows' 사용)
     prog_frame = ttk.Labelframe(
         container, text="프로그램 창", style="Custom.TLabelframe", padding=10
     )
@@ -478,27 +538,25 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     )
     prog_toggle_btn.pack(side=LEFT, padx=(0, 5))
     
-    # --- [수정] 텍스트 변경 ---
     prog_select_all_btn = ttk.Button(
         prog_btn_frame, text="그룹 선택", bootstyle="info-outline",
-        command=lambda items=raw_windows: on_select_all_in_group(items)
+        command=lambda items=filtered_windows: on_select_all_in_group(items) # [수정] 필터된 리스트 전달
     )
     prog_select_all_btn.pack(side=LEFT, padx=(0, 5))
     
     prog_deselect_all_btn = ttk.Button(
         prog_btn_frame, text="그룹 해제", bootstyle="warning-outline",
-        command=lambda items=raw_windows: on_deselect_all_in_group(items)
+        command=lambda items=filtered_windows: on_deselect_all_in_group(items) # [수정] 필터된 리스트 전달
     )
     prog_deselect_all_btn.pack(side=LEFT)
-    # --- [수정 끝] ---
     
     prog_items_frame = ttk.Frame(prog_frame)
     prog_items_frame.pack(fill=X, padx=0, pady=0)
     
-    if not raw_windows:
+    if not filtered_windows:
         ttk.Label(prog_items_frame, text="- 열린 프로그램이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
-        for item_title in raw_windows: 
+        for item_title in filtered_windows: # [수정]
             item_frame = ttk.Frame(prog_items_frame) 
             item_frame.pack(fill=X, padx=10)
             
@@ -524,7 +582,7 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     prog_toggle_btn.config(command=lambda f=prog_items_frame, b=prog_toggle_btn: toggle_frame(f, b))
 
 
-    # (브라우저 탭 부분 - 수정됨)
+    # (브라우저 탭 부분 - 'filtered_tabs' 사용)
     tab_frame = ttk.Labelframe(
         container, text="브라우저 탭", style="Custom.TLabelframe", padding=10
     )
@@ -538,29 +596,27 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     )
     tab_toggle_btn.pack(side=LEFT, padx=(0, 5))
     
-    tab_titles_only = [tab['title'] for tab in raw_tabs_data]
+    tab_titles_only = [tab['title'] for tab in filtered_tabs] # [수정]
     
-    # --- [수정] 텍스트 변경 ---
     tab_select_all_btn = ttk.Button(
         tab_btn_frame, text="그룹 선택", bootstyle="info-outline",
-        command=lambda items=tab_titles_only: on_select_all_in_group(items)
+        command=lambda items=tab_titles_only: on_select_all_in_group(items) # [수정]
     )
     tab_select_all_btn.pack(side=LEFT, padx=(0, 5))
     
     tab_deselect_all_btn = ttk.Button(
         tab_btn_frame, text="그룹 해제", bootstyle="warning-outline",
-        command=lambda items=tab_titles_only: on_deselect_all_in_group(items)
+        command=lambda items=tab_titles_only: on_deselect_all_in_group(items) # [수정]
     )
     tab_deselect_all_btn.pack(side=LEFT)
-    # --- [수정 끝] ---
     
     tab_items_frame = ttk.Frame(tab_frame)
     tab_items_frame.pack(fill=X, padx=0, pady=0)
     
-    if not raw_tabs_data:
+    if not filtered_tabs:
         ttk.Label(tab_items_frame, text="- 열린 탭이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
-        for tab_dict in raw_tabs_data:
+        for tab_dict in filtered_tabs: # [수정]
             item_title = tab_dict['title']
             item_frame = ttk.Frame(tab_items_frame) 
             item_frame.pack(fill=X, padx=10)
@@ -597,7 +653,8 @@ def toggle_frame(frame, button):
         button.config(text="▼")
 
 def update_saved_sessions_tab(parent_frame):
-    """(탭 3) "저장된 작업" 탭 (수정 없음)"""
+    """(탭 3) "저장된 작업" 탭 (검색창 추가, 필터링 로직 추가)"""
+    global global_search_query_saved
     print(f"[DEBUG] '저장된 작업 탭' UI 재생성...")
 
     for widget in parent_frame.winfo_children():
@@ -607,12 +664,52 @@ def update_saved_sessions_tab(parent_frame):
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container 
 
+    # --- [신규] 검색창 프레임 ---
+    search_frame = ttk.Frame(container)
+    search_frame.pack(fill=X, padx=5, pady=(5, 0))
+    
+    search_label = ttk.Label(search_frame, text="검색:")
+    search_label.pack(side=LEFT, padx=(0, 5))
+    
+    search_entry = ttk.Entry(search_frame, textvariable=global_search_query_saved)
+    search_entry.pack(side=LEFT, fill=X, expand=True)
+    search_entry.bind("<Return>", lambda e: on_search_enter(e, 'saved'))
+    # --- [신규 끝] ---
+    
+    ttk.Separator(container).pack(fill=X, padx=5, pady=(10, 5))
+
     saved_sessions = load_sessions()
 
-    if not saved_sessions:
-        ttk.Label(container, text="저장된 작업이 없습니다.", font=("Arial", 12)).pack(pady=10)
+    # --- [신규] 검색 필터링 로직 ---
+    query = global_search_query_saved.get().lower()
+    filtered_sessions = saved_sessions
+    
+    if query:
+        print(f"  -> '저장된 작업' 탭 '{query}'로 필터링")
+        filtered_sessions = []
+        
+        def item_matches(item, query):
+            # 구/신 버전 데이터 호환
+            if isinstance(item, dict):
+                return query in item.get('title', '').lower()
+            else:
+                return query in str(item).lower()
+                
+        for group in saved_sessions:
+            if (query in group.get('category', '').lower() or
+                query in group.get('summary', '').lower() or
+                any(item_matches(item, query) for item in group.get('items', []))):
+                filtered_sessions.append(group)
+    # --- [신규 끝] ---
+
+    if not filtered_sessions:
+        if query:
+            ttk.Label(container, text=f"'{query}'에 대한 검색 결과가 없습니다.", font=("Arial", 12)).pack(pady=10)
+        else:
+            ttk.Label(container, text="저장된 작업이 없습니다.", font=("Arial", 12)).pack(pady=10)
     else:
-        for session_group in reversed(saved_sessions):
+        # [수정] 'saved_sessions' 대신 'filtered_sessions' 사용
+        for session_group in reversed(filtered_sessions):
             category_name = session_group.get('category', '알 수 없음')
             summary = session_group.get('summary', '요약 없음')
             items_data = session_group.get('items', []) 
@@ -727,7 +824,6 @@ def update_saved_sessions_tab(parent_frame):
 def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
     """(수정) 100ms마다 큐를 확인 (전역 변수 갱신, force_live_refresh 처리)"""
     global global_last_raw_tabs_data, global_last_raw_windows
-    # --- [신규] 마지막 AI 요약본 전역 변수 참조 ---
     global global_last_ai_summary
     
     try:
@@ -737,7 +833,6 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
         if message_type == 'raw_update':
             print("[DEBUG] UI 큐: '실시간' 데이터 수신.")
             
-            # [신규] 전역 변수 갱신
             global_last_raw_tabs_data = message_data.get('raw_tabs_data', [])
             global_last_raw_windows = message_data.get('raw_windows', [])
             
@@ -753,16 +848,14 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
         elif message_type == 'ai_update':
             print("[DEBUG] UI 큐: 'AI 결과' 데이터 수신.")
             
-            # [신규] 전역 변수 갱신
             global_last_raw_tabs_data = message_data.get('raw_tabs_data', [])
             global_last_raw_windows = message_data.get('raw_windows', [])
-            # --- [신규] 마지막 AI 요약본 저장 ---
             global_last_ai_summary = message_data.get('ai_summary', []) 
             
             try:
                 update_ai_summary_tab(
                     tab_ai_parent, 
-                    global_last_ai_summary, # 수정
+                    global_last_ai_summary,
                     global_last_raw_tabs_data,
                     global_last_raw_windows
                 )
@@ -776,19 +869,14 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
             except Exception as e:
                 print(f"[DEBUG] !!! 저장 탭 업데이트 중 오류 발생: {e} !!!")
 
-        # --- [수정] 'force_live_refresh' (체크박스 클릭 또는 선택 저장/닫기 시) ---
         elif message_type == 'force_live_refresh':
-            print("[DEBUG] UI 큐: '라이브 탭' 갱신 요청 수신 (선택 상태 동기화).")
-            # (저장 후 체크박스를 해제하기 위해 두 탭 모두 갱신)
+            print("[DEBUG] UI 큐: '라이브 탭' 갱신 요청 수신 (선택/검색 동기화).")
             try:
-                # 1. 전체 목록 탭 갱신
                 update_raw_list_tab(
                     tab_raw_parent, 
                     global_last_raw_tabs_data, 
                     global_last_raw_windows
                 )
-                # 2. AI 탭 갱신
-                # --- [수정] 빈 리스트가 아닌, 저장된 'global_last_ai_summary' 사용 ---
                 update_ai_summary_tab(
                     tab_ai_parent, 
                     global_last_ai_summary, 
@@ -797,7 +885,6 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
                 )
             except Exception as e:
                 print(f"[DEBUG] !!! 라이브 탭(Raw/AI) 갱신 중 오류 발생: {e} !!!")
-        # --- [수정 끝] ---
 
         elif message_data.get('error'):
             print(f"UI 큐 오류 수신: {message_data['error']}")
@@ -832,6 +919,13 @@ if __name__ == "__main__":
     root.title("내 작업 요약기 (AIProject)")
     root.geometry("600x700")
 
+    # --- [수정] 전역 Tkinter 변수 초기화 (반드시 root 생성 후) ---
+    # [오류 수정] 이 블록은 이미 전역이므로 'global' 키워드를 사용하지 않습니다.
+    global_search_query_ai = tk.StringVar(root) 
+    global_search_query_raw = tk.StringVar(root) 
+    global_search_query_saved = tk.StringVar(root)
+    # --- [수정 끝] ---
+
     style = ttk.Style()
     default_fg = style.lookup("TLabel", "foreground") 
     style.configure(
@@ -847,7 +941,6 @@ if __name__ == "__main__":
     title_label.pack(pady=10)
 
     notebook = ttk.Notebook(root)
-    # [수정] 하단 버튼 공간 확보를 위해 Pady 변경
     notebook.pack(fill=BOTH, expand=YES, padx=10, pady=(10, 5)) 
 
     tab_ai_parent_frame = ttk.Frame(notebook, padding=0)
@@ -858,14 +951,13 @@ if __name__ == "__main__":
     notebook.add(tab_raw_parent_frame, text="전체 목록 (원본)")
     notebook.add(tab_saved_parent_frame, text="저장된 작업 (보관함)")
     
-    # --- [수정] 하단 버튼 프레임 (버튼 2개) ---
+    # (하단 버튼 프레임 - 수정 없음)
     bottom_frame = ttk.Frame(root)
     bottom_frame.pack(fill=X, padx=10, pady=(5, 10))
     
-    # 'pack'은 공간을 나눠가지므로, 'fill=X'와 'expand=True'를 둘 다 줌
     save_selected_button = ttk.Button(
         bottom_frame,
-        text="선택 항목 저장", # (텍스트 길이 맞춤)
+        text="선택 항목 저장",
         bootstyle="success",
         command=lambda: on_save_selected_click(root)
     )
@@ -874,11 +966,10 @@ if __name__ == "__main__":
     close_selected_button = ttk.Button(
         bottom_frame,
         text="선택 항목 닫기",
-        bootstyle="danger", # (저장과 구분되는 'danger' 스타일)
-        command=on_close_selected_click # (새 함수 연결)
+        bootstyle="danger",
+        command=on_close_selected_click
     )
     close_selected_button.pack(side=LEFT, fill=X, expand=True, padx=(5, 0))
-    # --- [수정 끝] ---
     
     root.after(100, check_queue, root, tab_ai_parent_frame, tab_raw_parent_frame, tab_saved_parent_frame)
     ui_queue.put({'type': 'refresh_saved_tab'})
