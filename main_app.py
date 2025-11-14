@@ -3,6 +3,8 @@
 import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
+# --- [수정] tkinter 기본 'simpledialog' import ---
+from tkinter import simpledialog
 import threading
 from queue import Queue, Empty
 import time 
@@ -15,7 +17,6 @@ from websocket_server import start_server_thread
 from window_utils import close_window_by_title, activate_window_by_title
 from ui_components import ScrollableTab
 from session_utils import save_session, load_sessions, overwrite_sessions
-# --- [신규] 프로그램 실행기 import ---
 from program_mapper import launch_program_by_title
 
 # -------------------------------------------------------------------
@@ -25,11 +26,16 @@ ui_queue = Queue()
 command_queue = Queue()
 job_queue = Queue()
 
+# --- [신규] 선택 항목 저장을 위한 전역 상태 변수 ---
+selected_items_set = set()
+global_last_raw_tabs_data = []
+global_last_raw_windows = []
+# --- [신규 끝] ---
+
 # -------------------------------------------------------------------
 # (AI 작업자 스레드... 동일)
 # -------------------------------------------------------------------
 def ai_worker_thread(job_q, ui_q):
-    # ... (수정 없음) ...
     DEBOUNCE_SECONDS = 15 
     while True:
         try:
@@ -102,82 +108,51 @@ def on_save_group_click(group_data):
     else:
         print(f"'{category}' 그룹 저장 실패.")
 
-# --- [수정] on_restore_group_click (개별 복원 함수를 재사용하도록 변경) ---
 def on_restore_group_click(items_data):
-    """(그룹 복원 콜백) 저장된 그룹을 복원합니다."""
+    """(그룹 복원 콜백 - 수정 없음)"""
     print(f"'{len(items_data)}'개 항목의 그룹 복원 요청...")
-    
-    if not items_data:
-        return
-        
+    if not items_data: return
     count = 0
-    # [수정] 그룹 복원은 단순히 개별 복원을 반복 호출
     for item in items_data:
-        # on_restore_item_click은 성공 시 True를 반환 (가정)
         if on_restore_item_click(item, is_group_call=True):
              count += 1
-            
     print(f"총 {count}개의 항목 (탭/프로그램) 복원 명령을 전송/실행했습니다.")
-# --- [수정 끝] ---
 
 
-# --- [수정] on_restore_item_click (탭과 프로그램 모두 처리) ---
 def on_restore_item_click(item_data, is_group_call=False):
-    """(개별 복원 콜백) 저장된 개별 항목(탭 또는 프로그램)을 복원합니다."""
-    
-    # is_group_call=True 이면 개별 로그를 찍지 않음 (그룹 로그로 대체)
+    """(개별 복원 콜백 - 수정 없음)"""
     if not is_group_call:
         print(f"[개별 복원] 요청...")
-
-    # 1. 딕셔너리(신규)인지 문자열(구)인지 확인
     if isinstance(item_data, dict): 
         item_type = item_data.get('type')
-        
-        # 2. 탭 복원
         if item_type == 'tab' and item_data.get('url'):
             url_to_open = item_data.get('url')
-            if not is_group_call:
-                print(f"  -> [탭 복원] {url_to_open}")
+            if not is_group_call: print(f"  -> [탭 복원] {url_to_open}")
             command_queue.put({"action": "open_tab", "url": url_to_open})
-            return True # 성공
-            
-        # 3. 프로그램 복원 (신규)
+            return True
         elif item_type == 'window' and item_data.get('title'):
             title = item_data.get('title')
-            # program_mapper.py 호출
-            return launch_program_by_title(title) # True/False 반환
-            
+            return launch_program_by_title(title)
         else:
-            if not is_group_call:
-                print("  -> [복원 불가] 알 수 없는 데이터 타입입니다.")
+            if not is_group_call: print("  -> [복원 불가] 알 수 없는 데이터 타입입니다.")
             return False
-            
     else:
-        # 4. 구 버전 데이터 (문자열)
-        if not is_group_call:
-            print(f"  -> [복원 불가] '{item_data}' (URL/타입 정보가 없는 구 버전 데이터, 건너뜀)")
+        if not is_group_call: print(f"  -> [복원 불가] '{item_data}' (URL/타입 정보가 없는 구 버전 데이터, 건너뜀)")
         return False
-# --- [수정 끝] ---
-
 
 def on_delete_group_click(group_to_delete):
     """(그룹 삭제 콜백 - 수정 없음)"""
     category = group_to_delete.get('category', '알 수 없음')
     saved_at_id = group_to_delete.get('saved_at') 
-    
     if not saved_at_id:
         print(f"'{category}' 그룹 삭제 실패: 고유 ID(saved_at)가 없습니다.")
         return
-
     print(f"'{category}' ({saved_at_id}) 그룹 삭제 요청...")
-    
     all_sessions = load_sessions()
-    
     filtered_sessions = [
         session for session in all_sessions 
         if session.get('saved_at') != saved_at_id
     ]
-    
     if len(filtered_sessions) < len(all_sessions):
         success = overwrite_sessions(filtered_sessions)
         if success:
@@ -188,15 +163,99 @@ def on_delete_group_click(group_to_delete):
     else:
         print("삭제할 그룹을 찾지 못했습니다.")
 
+# --- [신규 기능] 체크박스 클릭 시 호출 ---
+def on_item_check(item_title, var):
+    """(신규) 체크박스 상태가 변경되면 전역 'selected_items_set'을 업데이트합니다."""
+    if var.get():
+        selected_items_set.add(item_title)
+        print(f"[선택] '{item_title}' 추가 (총 {len(selected_items_set)}개)")
+    else:
+        if item_title in selected_items_set:
+            selected_items_set.remove(item_title)
+            print(f"[선택] '{item_title}' 제거 (총 {len(selected_items_set)}개)")
+
+# --- [수정] '선택 항목 저장' 버튼 클릭 시 (root 인자 받도록 수정) ---
+def on_save_selected_click(root):
+    """(신규) 'selected_items_set'에 저장된 항목들을 새 그룹으로 저장합니다."""
+    global selected_items_set, global_last_raw_tabs_data, global_last_raw_windows
+    
+    if not selected_items_set:
+        print("[선택 저장] 저장할 항목이 없습니다.")
+        return
+
+    print(f"[선택 저장] {len(selected_items_set)}개 항목 저장 시작...")
+
+    # 1. 사용자에게 그룹 이름 입력받기 (팝업)
+    # --- [수정] tkinter 'simpledialog' 사용 ---
+    group_name = simpledialog.askstring(
+        "그룹 이름 입력", 
+        "저장할 그룹의 이름을 입력하세요:",
+        initialvalue="새로 저장한 그룹",
+        parent=root # 팝업이 메인창 위에 뜨도록 설정
+    )
+    # --- [수정 끝] ---
+    
+    if not group_name:
+        print("[선택 저장] 사용자가 취소했습니다.")
+        return
+
+    # 2. 'hydrated' (URL/Type 포함) 데이터 생성
+    hydrated_items_list = []
+    # 최신 URL 정보가 담긴 '룩업' 생성
+    url_lookup = {tab['title']: tab['url'] for tab in global_last_raw_tabs_data}
+
+    for title in selected_items_set:
+        item_url = url_lookup.get(title) # 룩업에서 URL 검색
+        
+        if item_url:
+            # URL이 있으면 '탭'으로 저장
+            hydrated_items_list.append({
+                "type": "tab", "title": title, "url": item_url
+            })
+        elif title in global_last_raw_windows:
+            # 윈도우 목록에 있으면 '윈도우'로 저장
+            hydrated_items_list.append({
+                "type": "window", "title": title
+            })
+        else:
+            # (그 사이에 닫힌 경우) '알 수 없음'으로 저장
+            hydrated_items_list.append({
+                "type": "unknown", "title": title
+            })
+
+    # 3. 저장할 새 그룹 데이터 생성
+    new_group_data = {
+        "category": group_name,
+        "summary": f"총 {len(hydrated_items_list)}개의 항목을 수동으로 저장함",
+        "items": hydrated_items_list
+    }
+    
+    # 4. 파일에 저장 (session_utils.py 호출)
+    success = save_session(new_group_data)
+    
+    if success:
+        print("[선택 저장] 저장 완료. '저장된 탭'을 갱신합니다.")
+        # 5. '저장된 탭' 새로고침
+        ui_queue.put({'type': 'refresh_saved_tab'})
+        
+        # 6. 선택 상태 초기화
+        selected_items_set.clear()
+        
+        # 7. [신규] '라이브 탭' 강제 새로고침
+        # (체크박스 해제를 즉시 반영하기 위해)
+        ui_queue.put({'type': 'force_live_refresh'})
+    else:
+        print("[선택 저장] 파일 저장에 실패했습니다.")
+# --- [신규 기능 끝] ---
 
 # -------------------------------------------------------------------
 # (UI 업데이트 함수)
 # -------------------------------------------------------------------
 
 def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_windows):
-    """(탭 1) "관련 작업" 탭 (수정 없음)"""
-    # ... (수정 없음) ...
-    print(f"[DEBUG] 'AI 요약 탭' UI 재생성...")
+    """(탭 1) "관련 작업" 탭 (체크박스 추가)"""
+    global selected_items_set
+    print(f"[DEBUG] 'AI 요약 탭' UI 재생성... (선택 {len(selected_items_set)}개 복원)")
     
     for widget in parent_frame.winfo_children():
         widget.destroy()
@@ -222,15 +281,16 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
             )
             group_frame.pack(fill=X, pady=5, padx=5)
 
+            # (상단 프레임)
             top_frame = ttk.Frame(group_frame)
             top_frame.pack(fill=X, anchor="w", padx=0)
-
             summary_label = ttk.Label(
                 top_frame, text=summary, 
                 font=("Arial", 10, "italic"), wraplength=450
             )
             summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
+            # (데이터 강화 로직)
             hydrated_group_data = json.loads(json.dumps(category_group))
             hydrated_items_list = [] 
             for title in items_titles_only:
@@ -243,6 +303,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     hydrated_items_list.append({"type": "unknown", "title": title})
             hydrated_group_data['items'] = hydrated_items_list
             
+            # (그룹 버튼)
             group_close_button = ttk.Button(
                 top_frame, text="그룹 닫기", bootstyle="danger-outline", width=10,
                 command=lambda current_items=items_titles_only: on_close_group_click(current_items)
@@ -255,6 +316,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
             )
             group_save_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
 
+            # --- [수정] 항목 리스트에 체크박스 추가 ---
             if not items_titles_only:
                 ttk.Label(group_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
             else:
@@ -266,28 +328,46 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     item_frame = ttk.Frame(group_frame)
                     item_frame.pack(fill=X, padx=10) 
                     
+                    # --- [신규] 체크박스 ---
+                    var = tk.BooleanVar()
+                    if item_title in selected_items_set:
+                        var.set(True) # UI 복원
+                    
+                    chk = ttk.Checkbutton(
+                        item_frame,
+                        variable=var,
+                        command=lambda t=item_title, v=var: on_item_check(t, v)
+                    )
+                    chk.pack(side=LEFT, padx=(5,0))
+                    # --- [신규 끝] ---
+                    
                     close_button = ttk.Button(
                         item_frame, text="X", bootstyle="danger-outline", width=2,
                         command=lambda title=item_title: on_close_item_click(title)
                     )
                     close_button.pack(side=RIGHT, padx=5)
+
                     label = ttk.Label(
                         item_frame, text=f"{icon} {item_title}", 
                         font=("Arial", 10), cursor="hand2"
                     )
-                    label.pack(side=LEFT, anchor="w", padx=(0, 5))
+                    # [수정] 체크박스가 생겼으므로 LEFT로 pack
+                    label.pack(side=LEFT, anchor="w", padx=(0, 5)) 
                     label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
-
+            # --- [수정 끝] ---
 
 def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
-    """(탭 2) "전체 목록" 탭 (수정 없음)"""
-    # ... (수정 없음) ...
-    print(f"[DEBUG] '전체 목록 탭' UI 재생성...")
+    """(탭 2) "전체 목록" 탭 (체크박스 추가)"""
+    global selected_items_set
+    print(f"[DEBUG] '전체 목록 탭' UI 재생성... (선택 {len(selected_items_set)}개 복원)")
+    
     for widget in parent_frame.winfo_children():
         widget.destroy()
     scroll_tab = ScrollableTab(parent_frame, padding=0)
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container
+
+    # (프로그램 창 부분 - 수정됨)
     prog_frame = ttk.Labelframe(
         container, text="프로그램 창", style="Custom.TLabelframe", padding=10
     )
@@ -295,17 +375,32 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     if not raw_windows:
         ttk.Label(prog_frame, text="- 열린 프로그램이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
-        for item in raw_windows:
+        for item_title in raw_windows: # 'item_title'은 '제목' 문자열
             item_frame = ttk.Frame(prog_frame) 
             item_frame.pack(fill=X, padx=10)
+            
+            # --- [신규] 체크박스 ---
+            var = tk.BooleanVar()
+            if item_title in selected_items_set:
+                var.set(True)
+            chk = ttk.Checkbutton(
+                item_frame, 
+                variable=var,
+                command=lambda t=item_title, v=var: on_item_check(t, v)
+            )
+            chk.pack(side=LEFT, padx=(5,0))
+            # --- [신규 끝] ---
+            
             close_button = ttk.Button(
                 item_frame, text="X", bootstyle="danger-outline", width=2,
-                command=lambda title=item: on_close_item_click(title) 
+                command=lambda title=item_title: on_close_item_click(title) 
             )
             close_button.pack(side=RIGHT, padx=5)
-            label = ttk.Label(item_frame, text=f"🖥️ {item}", font=("Arial", 10), cursor="hand2") 
+            label = ttk.Label(item_frame, text=f"🖥️ {item_title}", font=("Arial", 10), cursor="hand2") 
             label.pack(side=LEFT, anchor="w", padx=(0, 5))
-            label.bind("<Button-1>", lambda e, t=item: on_item_click(t, raw_windows))
+            label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
+
+    # (브라우저 탭 부분 - 수정됨)
     tab_frame = ttk.Labelframe(
         container, text="브라우저 탭", style="Custom.TLabelframe", padding=10
     )
@@ -317,6 +412,19 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
             item_title = tab_dict['title']
             item_frame = ttk.Frame(tab_frame) 
             item_frame.pack(fill=X, padx=10)
+            
+            # --- [신규] 체크박스 ---
+            var = tk.BooleanVar()
+            if item_title in selected_items_set:
+                var.set(True)
+            chk = ttk.Checkbutton(
+                item_frame, 
+                variable=var,
+                command=lambda t=item_title, v=var: on_item_check(t, v)
+            )
+            chk.pack(side=LEFT, padx=(5,0))
+            # --- [신규 끝] ---
+
             close_button = ttk.Button(
                 item_frame, text="X", bootstyle="danger-outline", width=2,
                 command=lambda title=item_title: on_close_item_click(title) 
@@ -325,7 +433,6 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
             label = ttk.Label(item_frame, text=f"🌐 {item_title}", font=("Arial", 10), cursor="hand2")
             label.pack(side=LEFT, anchor="w", padx=(0, 5))
             label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
-
 
 def toggle_frame(frame, button):
     """(접기/펴기 콜백 - 수정 없음)"""
@@ -336,10 +443,8 @@ def toggle_frame(frame, button):
         frame.pack(fill=X, anchor="w", padx=0, pady=(5,0))
         button.config(text="▼")
 
-
-# --- [수정] update_saved_sessions_tab (프로그램에도 '복원' 버튼 추가) ---
 def update_saved_sessions_tab(parent_frame):
-    """(탭 3 - 수정) "저장된 작업" 탭 (개별 프로그램 복원 버튼 추가)"""
+    """(탭 3) "저장된 작업" 탭 (수정 없음)"""
     print(f"[DEBUG] '저장된 작업 탭' UI 재생성...")
 
     for widget in parent_frame.winfo_children():
@@ -374,7 +479,6 @@ def update_saved_sessions_tab(parent_frame):
             )
             group_frame.pack(fill=X, pady=5, padx=5)
 
-            # (상단 프레임 및 버튼 - 수정 없음)
             top_frame = ttk.Frame(group_frame)
             top_frame.pack(fill=X, anchor="w", padx=0)
 
@@ -407,7 +511,6 @@ def update_saved_sessions_tab(parent_frame):
             )
             group_delete_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
             
-            # (항목 리스트 프레임 - 수정 없음)
             items_frame = ttk.Frame(group_frame)
             items_frame.pack(fill=X, padx=0, pady=0)
             
@@ -421,7 +524,7 @@ def update_saved_sessions_tab(parent_frame):
                     icon = "•"
                     item_title = ""
                     item_url = None
-                    is_restorable = False # [신규] 탭 또는 프로그램인 경우
+                    is_restorable = False 
 
                     if isinstance(item_data, dict):
                         item_type = item_data.get('type', 'unknown')
@@ -430,11 +533,11 @@ def update_saved_sessions_tab(parent_frame):
                         if item_type == 'tab':
                             icon = "🌐"
                             item_url = item_data.get('url')
-                            if item_url: # URL이 있어야만 복원 가능
+                            if item_url: 
                                 is_restorable = True 
                         elif item_type == 'window':
                             icon = "🖥️"
-                            is_restorable = True # 프로그램은 일단 복원 시도 가능
+                            is_restorable = True 
                     else:
                         item_title = str(item_data) 
                         icon = "❓" 
@@ -455,7 +558,6 @@ def update_saved_sessions_tab(parent_frame):
                         )
                         url_label.pack(side=LEFT, anchor="w", padx=5)
                     
-                    # --- [신규] '복원 가능' (is_restorable)할 때만 버튼 표시 ---
                     if is_restorable:
                         restore_item_btn = ttk.Button(
                             item_list_frame,
@@ -465,18 +567,13 @@ def update_saved_sessions_tab(parent_frame):
                             command=lambda item=item_data: on_restore_item_click(item, is_group_call=False)
                         )
                         restore_item_btn.pack(side=RIGHT, padx=5)
-                    # --- [신규 끝] ---
 
-            # (접기 버튼 명령 연결 - 수정 없음)
             toggle_btn.config(command=lambda f=items_frame, b=toggle_btn: toggle_frame(f, b))
-# --- [수정 끝] ---
 
 
-# -------------------------------------------------------------------
-# (check_queue... 동일)
-# -------------------------------------------------------------------
 def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
-    """(수정 없음) 100ms마다 큐를 확인하여 모든 UI 탭을 업데이트합니다."""
+    """(수정) 100ms마다 큐를 확인 (전역 변수 갱신, force_live_refresh 처리)"""
+    global global_last_raw_tabs_data, global_last_raw_windows
     
     try:
         message_data = ui_queue.get_nowait()
@@ -484,23 +581,33 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
         
         if message_type == 'raw_update':
             print("[DEBUG] UI 큐: '실시간' 데이터 수신.")
+            
+            # [신규] 전역 변수 갱신
+            global_last_raw_tabs_data = message_data.get('raw_tabs_data', [])
+            global_last_raw_windows = message_data.get('raw_windows', [])
+            
             try:
                 update_raw_list_tab(
                     tab_raw_parent, 
-                    message_data.get('raw_tabs_data', []), 
-                    message_data.get('raw_windows', [])
+                    global_last_raw_tabs_data, 
+                    global_last_raw_windows
                 )
             except Exception as e:
                 print(f"[DEBUG] !!! 전체 목록 탭 업데이트 중 오류 발생: {e} !!!")
         
         elif message_type == 'ai_update':
             print("[DEBUG] UI 큐: 'AI 결과' 데이터 수신.")
+            
+            # [신규] 전역 변수 갱신
+            global_last_raw_tabs_data = message_data.get('raw_tabs_data', [])
+            global_last_raw_windows = message_data.get('raw_windows', [])
+            
             try:
                 update_ai_summary_tab(
                     tab_ai_parent, 
                     message_data.get('ai_summary', []),
-                    message_data.get('raw_tabs_data', []),
-                    message_data.get('raw_windows', [])
+                    global_last_raw_tabs_data,
+                    global_last_raw_windows
                 )
             except Exception as e:
                 print(f"[DEBUG] !!! AI 요약 탭 업데이트 중 오류 발생: {e} !!!")
@@ -511,6 +618,30 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
                 update_saved_sessions_tab(tab_saved_parent)
             except Exception as e:
                 print(f"[DEBUG] !!! 저장 탭 업데이트 중 오류 발생: {e} !!!")
+
+        # --- [신규] '선택 저장' 완료 후 라이브 탭 강제 갱신 ---
+        elif message_type == 'force_live_refresh':
+            print("[DEBUG] UI 큐: '라이브 탭' 갱신 요청 수신 (선택 초기화).")
+            # (저장 후 체크박스를 해제하기 위해 두 탭 모두 갱신)
+            try:
+                # 1. 전체 목록 탭 갱신
+                update_raw_list_tab(
+                    tab_raw_parent, 
+                    global_last_raw_tabs_data, 
+                    global_last_raw_windows
+                )
+                # 2. AI 탭 갱신
+                #    AI 요약본이 없으므로, 빈 리스트로 갱신하여 체크박스만 초기화
+                #    (다음 AI 갱신 시 어차피 다시 그려짐)
+                update_ai_summary_tab(
+                    tab_ai_parent, 
+                    [], # AI 요약본이 없으므로 빈 리스트 전달
+                    global_last_raw_tabs_data,
+                    global_last_raw_windows
+                )
+            except Exception as e:
+                print(f"[DEBUG] !!! 라이브 탭(Raw/AI) 갱신 중 오류 발생: {e} !!!")
+        # --- [신규 끝] ---
 
         elif message_data.get('error'):
             print(f"UI 큐 오류 수신: {message_data['error']}")
@@ -523,7 +654,7 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
         root.after(100, check_queue, root, tab_ai_parent, tab_raw_parent, tab_saved_parent)
 
 # -------------------------------------------------------------------
-# (프로그램 시작점 __main__... 동일)
+# 프로그램의 진짜 시작점
 # -------------------------------------------------------------------
 if __name__ == "__main__":
     
@@ -560,7 +691,8 @@ if __name__ == "__main__":
     title_label.pack(pady=10)
 
     notebook = ttk.Notebook(root)
-    notebook.pack(fill=BOTH, expand=YES, padx=10, pady=(10, 10))
+    # [수정] 하단 버튼 공간 확보를 위해 Pady 변경
+    notebook.pack(fill=BOTH, expand=YES, padx=10, pady=(10, 5)) 
 
     tab_ai_parent_frame = ttk.Frame(notebook, padding=0)
     tab_raw_parent_frame = ttk.Frame(notebook, padding=0)
@@ -569,6 +701,20 @@ if __name__ == "__main__":
     notebook.add(tab_ai_parent_frame, text="관련 작업 (AI 요약)")
     notebook.add(tab_raw_parent_frame, text="전체 목록 (원본)")
     notebook.add(tab_saved_parent_frame, text="저장된 작업 (보관함)")
+    
+    # --- [신규] 하단 '선택 항목 저장' 버튼 프레임 ---
+    bottom_frame = ttk.Frame(root)
+    bottom_frame.pack(fill=X, padx=10, pady=(5, 10))
+    
+    save_selected_button = ttk.Button(
+        bottom_frame,
+        text="선택 항목 저장하기",
+        bootstyle="success", # (눈에 띄는 'success' 스타일)
+        # --- [수정] 람다에 'root' 전달 ---
+        command=lambda: on_save_selected_click(root)
+    )
+    save_selected_button.pack(fill=X, expand=YES)
+    # --- [신규 끝] ---
     
     root.after(100, check_queue, root, tab_ai_parent_frame, tab_raw_parent_frame, tab_saved_parent_frame)
     ui_queue.put({'type': 'refresh_saved_tab'})
