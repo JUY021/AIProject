@@ -252,6 +252,31 @@ def on_save_selected_click(root):
         print("[선택 저장] 파일 저장에 실패했습니다.")
 # --- [신규 기능 끝] ---
 
+# --- [신규 기능] '선택 항목 닫기' 버튼 클릭 시 호출 ---
+def on_close_selected_click():
+    """(신규) 'selected_items_set'에 *있는* 모든 항목을 닫습니다."""
+    global selected_items_set
+    
+    if not selected_items_set:
+        print("[선택 닫기] 선택된 항목이 없습니다.")
+        return
+
+    print(f"[선택 닫기] {len(selected_items_set)}개 항목 닫기 시작...")
+    
+    # 'set'을 복사하여 순회 (닫으면서 'selected_items_set'이 변경될 수 있으므로)
+    items_to_close = list(selected_items_set)
+    
+    # 1. 닫기 실행 (기존 함수 재사용)
+    for title in items_to_close:
+        on_close_item_click(title)
+    
+    # 2. 닫은 후 선택 상태 초기화
+    selected_items_set.clear()
+    
+    # 3. UI 갱신 (체크박스 해제를 위해)
+    ui_queue.put({'type': 'force_live_refresh'})
+# --- [신규 기능 끝] ---
+
 # -------------------------------------------------------------------
 # (UI 업데이트 함수)
 # -------------------------------------------------------------------
@@ -627,7 +652,7 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
             except Exception as e:
                 print(f"[DEBUG] !!! 저장 탭 업데이트 중 오류 발생: {e} !!!")
 
-        # --- [수정] 'force_live_refresh' (체크박스 클릭 또는 선택 저장 시) ---
+        # --- [수정] 'force_live_refresh' (체크박스 클릭 또는 선택 저장/닫기 시) ---
         elif message_type == 'force_live_refresh':
             print("[DEBUG] UI 큐: '라이브 탭' 갱신 요청 수신 (선택 상태 동기화).")
             # (저장 후 체크박스를 해제하기 위해 두 탭 모두 갱신)
@@ -709,19 +734,27 @@ if __name__ == "__main__":
     notebook.add(tab_raw_parent_frame, text="전체 목록 (원본)")
     notebook.add(tab_saved_parent_frame, text="저장된 작업 (보관함)")
     
-    # --- [신규] 하단 '선택 항목 저장' 버튼 프레임 ---
+    # --- [수정] 하단 버튼 프레임 (버튼 2개) ---
     bottom_frame = ttk.Frame(root)
     bottom_frame.pack(fill=X, padx=10, pady=(5, 10))
     
+    # 'pack'은 공간을 나눠가지므로, 'fill=X'와 'expand=True'를 둘 다 줌
     save_selected_button = ttk.Button(
         bottom_frame,
-        text="선택 항목 저장하기",
-        bootstyle="success", # (눈에 띄는 'success' 스타일)
-        # --- [수정] 람다에 'root' 전달 ---
+        text="선택 항목 저장", # (텍스트 길이 맞춤)
+        bootstyle="success",
         command=lambda: on_save_selected_click(root)
     )
-    save_selected_button.pack(fill=X, expand=YES)
-    # --- [신규 끝] ---
+    save_selected_button.pack(side=LEFT, fill=X, expand=True, padx=(0, 5))
+    
+    close_selected_button = ttk.Button(
+        bottom_frame,
+        text="선택 항목 닫기",
+        bootstyle="danger", # (저장과 구분되는 'danger' 스타일)
+        command=on_close_selected_click # (새 함수 연결)
+    )
+    close_selected_button.pack(side=LEFT, fill=X, expand=True, padx=(5, 0))
+    # --- [수정 끝] ---
     
     root.after(100, check_queue, root, tab_ai_parent_frame, tab_raw_parent_frame, tab_saved_parent_frame)
     ui_queue.put({'type': 'refresh_saved_tab'})
