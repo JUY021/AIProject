@@ -12,6 +12,8 @@ from gemini_processor import configure_gemini, get_summary_from_gemini
 from websocket_server import start_server_thread
 from window_utils import close_window_by_title, activate_window_by_title
 from ui_components import ScrollableTab
+# --- [신규] 세션 유틸리티 import ---
+from session_utils import save_session, load_sessions
 
 # -------------------------------------------------------------------
 # (큐 정의... 동일)
@@ -89,17 +91,32 @@ def on_close_item_click(title):
     # 브라우저 탭 닫기 시도 (어차피 둘 중 하나만 성공함)
     command_queue.put({ "action": "close_tab", "title": title })
 
-# --- [신규 기능] ---
 def on_close_group_click(items_list):
-    """(신규) AI가 분류한 그룹 전체를 닫습니다."""
+    """(그룹 닫기 콜백) AI가 분류한 그룹 전체를 닫습니다."""
     print(f"'{len(items_list)}'개 항목의 그룹 전체 닫기 요청...")
     
     if not items_list:
         return
         
     for title in items_list:
-        # 이미 개별 닫기 로직이 있으므로 재사용
+        # 개별 닫기 로직 재사용
         on_close_item_click(title)
+
+# --- [신규 기능] ---
+def on_save_group_click(group_data):
+    """(신규) 그룹을 JSON 파일에 저장하고 닫습니다."""
+    category = group_data.get('category', '알 수 없는 그룹')
+    print(f"'{category}' 그룹 저장 요청...")
+    
+    # 1. 파일에 저장 (session_utils.py 호출)
+    success = save_session(group_data)
+    
+    if success:
+        # 2. 저장이 성공하면, 그룹 닫기 (기존 로직 재사용)
+        items_list = group_data.get('items', [])
+        on_close_group_click(items_list)
+    else:
+        print(f"'{category}' 그룹 저장 실패. 닫기 작업을 중단합니다.")
 # --- [신규 기능 끝] ---
 
 
@@ -107,14 +124,14 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
     """(탭 1) "관련 작업" 탭을 'Labelframe' UI로 새로 그립니다."""
     print(f"[DEBUG] 'AI 요약 탭' UI 재생성 (Collapse 미사용)...")
     
-    # 1. [TclError 해결] 탭의 이전 내용을 '통째로' 파괴
+    # 1. 이전 내용 파괴
     for widget in parent_frame.winfo_children():
         widget.destroy()
 
-    # 2. '통째로' 스크롤 가능한 새 프레임 생성
+    # 2. 스크롤 탭 생성
     scroll_tab = ScrollableTab(parent_frame, padding=0)
     scroll_tab.pack(fill=BOTH, expand=YES)
-    container = scroll_tab.container # 내용물이 들어갈 곳
+    container = scroll_tab.container 
 
     # 3. 새 카드로 채우기
     if not ai_summary_json:
@@ -125,18 +142,16 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
             summary = category_group.get('summary', '요약 없음')
             items = category_group.get('items', [])
 
-            # -------------------------------------------------
-            # [수정] 'Collapse' 위젯을 'Labelframe'으로 대체
-            # -------------------------------------------------
+            # Labelframe 생성
             group_frame = ttk.Labelframe(
                 master=container,
-                text=category_name, # 제목
+                text=category_name,
                 style="Custom.TLabelframe",
                 padding=10
             )
             group_frame.pack(fill=X, pady=5, padx=5)
 
-            # --- [수정] 요약 레이블과 그룹 닫기 버튼을 한 줄에 배치 ---
+            # --- [수정] 요약 레이블과 버튼을 한 줄에 배치 ---
             top_frame = ttk.Frame(group_frame)
             top_frame.pack(fill=X, anchor="w", padx=0)
 
@@ -145,22 +160,36 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
                 top_frame, 
                 text=summary, 
                 font=("Arial", 10, "italic"), 
-                wraplength=500 # 너비 고정
+                wraplength=450 # 버튼 공간 확보를 위해 너비 살짝 줄임
             )
             summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
-            # 2. [신규] 그룹 닫기 버튼 (오른쪽 정렬)
+            # --- [버튼 순서 변경 및 추가] ---
+            # (pack()은 오른쪽(RIGHT)부터 쌓으므로, '닫기'를 먼저 pack해야 오른쪽에 갑니다)
+            
+            # 3. [기존] 그룹 닫기 버튼 (가장 오른쪽)
             group_close_button = ttk.Button(
                 top_frame,
                 text="그룹 닫기",
-                bootstyle="danger-outline", # 'danger'보다 덜 부담스러운 'outline'
+                bootstyle="danger-outline",
                 width=10,
                 command=lambda current_items=items: on_close_group_click(current_items)
             )
             group_close_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
+
+            # 2. [신규] 그룹 저장 버튼 (닫기 버튼 왼쪽)
+            group_save_button = ttk.Button(
+                top_frame,
+                text="그룹 저장",
+                bootstyle="success-outline", # '저장'에 어울리는 'success'
+                width=10,
+                # [중요] 람다에 'items'가 아닌 'category_group' 전체를 넘김
+                command=lambda data=category_group: on_save_group_click(data)
+            )
+            group_save_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
             # --- [수정 끝] ---
 
-            # 3. 항목 리스트 (기존과 동일)
+            # 4. 항목 리스트 (기존과 동일)
             if not items:
                 ttk.Label(group_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
             else:
@@ -190,7 +219,8 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs, raw_windows):
 
 
 def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
-    """(탭 2) "전체 목록" 탭을 '커스텀 스타일' 카드로 새로 그립니다."""
+    """(탭 2) "전체 목록" 탭 (수정 없음)"""
+    # ... (이 함수는 수정 사항 없음) ...
     print(f"[DEBUG] '전체 목록 탭' UI 재생성...")
 
     # 1. [TclError 해결] 탭의 이전 내용을 '통째로' 파괴
@@ -202,7 +232,7 @@ def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container # 내용물이 들어갈 곳
 
-    # 3. 새 카드로 채우기 (기존과 동일)
+    # 3. 새 카드로 채우기
     prog_frame = ttk.Labelframe(
         container, text="프로그램 창", style="Custom.TLabelframe", padding=10
     )
@@ -245,8 +275,8 @@ def update_raw_list_tab(parent_frame, raw_tabs, raw_windows):
         
 
 def check_queue(root, tab_ai_parent, tab_raw_parent):
-    """100ms마다 큐를 확인하여 모든 UI 탭을 업데이트합니다."""
-    
+    """(수정 없음) 100ms마다 큐를 확인하여 모든 UI 탭을 업데이트합니다."""
+    # ... (이 함수는 수정 사항 없음) ...
     try:
         message_data = ui_queue.get_nowait()
         message_type = message_data.get('type')
@@ -281,7 +311,7 @@ def check_queue(root, tab_ai_parent, tab_raw_parent):
         root.after(100, check_queue, root, tab_ai_parent, tab_raw_parent)
 
 # -------------------------------------------------------------------
-# 프로그램의 진짜 시작점
+# 프로그램의 진짜 시작점 (수정 없음)
 # -------------------------------------------------------------------
 if __name__ == "__main__":
     
@@ -323,13 +353,11 @@ if __name__ == "__main__":
     notebook = ttk.Notebook(root)
     notebook.pack(fill=BOTH, expand=YES, padx=10, pady=(0, 10))
 
-    # -------------------------------------------------
     # (부모 프레임 추가... 동일)
-    # -------------------------------------------------
     tab_ai_parent_frame = ttk.Frame(notebook, padding=0)
     tab_raw_parent_frame = ttk.Frame(notebook, padding=0)
     
-    # --- [수정] 제안대로 AI 탭을 기본 탭으로 설정 (순서 변경) ---
+    # (AI 탭을 기본 탭으로 설정... 동일)
     notebook.add(tab_ai_parent_frame, text="관련 작업 (AI 요약)")
     notebook.add(tab_raw_parent_frame, text="전체 목록 (원본)")
     
