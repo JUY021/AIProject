@@ -1,4 +1,5 @@
 # ui_builders.py
+# (스타일 방식으로 수정 완료)
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -32,59 +33,17 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
     url_lookup = {tab['title']: tab['url'] for tab in raw_tabs_data}
     current_tab_titles = list(url_lookup.keys())
     
-    top_controls_frame = ttk.Frame(container)
-    
-    # --- [수정] ---
-    # 상단 여백을 10으로 다시 설정
-    top_controls_frame.pack(fill=X, padx=5, pady=(10, 10)) 
+    # --- [수정] 헬퍼 함수로 상단 컨트롤 생성 ---
+    create_tab_top_controls(
+        container,
+        search_var=app_state.global_search_query_ai,
+        search_tab_name='ai',
+        all_toggles_list=all_toggles,
+        on_select_all_cb=lambda js=ai_summary_json: on_select_all_in_ai_tab(js),
+        on_deselect_all_cb=lambda js=ai_summary_json: on_deselect_all_in_ai_tab(js),
+        on_force_refresh_cb=on_force_ai_refresh
+    )
     # --- [수정 끝] ---
-
-    button_frame = ttk.Frame(top_controls_frame)
-    button_frame.pack(side=LEFT)
-
-    tab_select_all_btn = ttk.Button(
-        button_frame, text="탭 전체 선택", bootstyle="info",
-        command=lambda js=ai_summary_json: on_select_all_in_ai_tab(js)
-    )
-    tab_select_all_btn.pack(side=LEFT, padx=(0, 5))
-    
-    tab_deselect_all_btn = ttk.Button(
-        button_frame, text="탭 전체 해제", bootstyle="warning",
-        command=lambda js=ai_summary_json: on_deselect_all_in_ai_tab(js)
-    )
-    tab_deselect_all_btn.pack(side=LEFT, padx=(0, 5))
-    
-    tab_collapse_all_btn = ttk.Button(
-        button_frame, text="전체 접기", bootstyle="light",
-    )
-    tab_collapse_all_btn.pack(side=LEFT, padx=(5, 5))
-    
-    tab_expand_all_btn = ttk.Button(
-        button_frame, text="전체 열기", bootstyle="light",
-    )
-    tab_expand_all_btn.pack(side=LEFT, padx=(0, 5))
-
-    search_frame = ttk.Frame(top_controls_frame)
-    search_frame.pack(side=RIGHT, fill=X, expand=True)
-
-    search_label = ttk.Label(search_frame, text="검색:")
-    search_label.pack(side=LEFT, padx=(5, 5)) 
-    
-    refresh_btn = ttk.Button(
-        search_frame, 
-        text="🔄", 
-        width=2, 
-        bootstyle="light",
-        command=on_force_ai_refresh
-    )
-    refresh_btn.pack(side=RIGHT, padx=(5, 0))
-    
-    search_entry = ttk.Entry(search_frame, textvariable=app_state.global_search_query_ai)
-    search_entry.pack(side=LEFT, fill=X, expand=True)
-    
-    search_entry.bind("<Return>", lambda e: on_search_enter(e, 'ai'))
-    
-    ttk.Separator(container).pack(fill=X, padx=5, pady=5)
 
     # --- (검색 필터링, 그룹 생성 루프 ... 동일) ---
     query = app_state.global_search_query_ai.get().lower()
@@ -130,6 +89,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
             )
             summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
+            # (Hydration 로직)
             hydrated_group_data = json.loads(json.dumps(category_group))
             hydrated_items_list = [] 
             for title in items_titles_only:
@@ -142,6 +102,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     hydrated_items_list.append({"type": "unknown", "title": title})
             hydrated_group_data['items'] = hydrated_items_list
             
+            # (그룹 버튼)
             group_close_button = ttk.Button(
                 top_frame, text="그룹 닫기", bootstyle="danger-outline", width=8,
                 command=lambda current_items=items_titles_only: on_close_group_click(current_items)
@@ -177,41 +138,19 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                     if item_title in raw_windows: icon = "🖥️"
                     elif item_title in current_tab_titles: icon = "🌐"
                     
-                    item_frame = ttk.Frame(inner_content_frame) 
-                    item_frame.pack(fill=X, padx=10) 
-                    
-                    var = tk.BooleanVar()
-                    if item_title in app_state.selected_items_set:
-                        var.set(True)
-                    chk = ttk.Checkbutton(
-                        item_frame,
-                        variable=var,
-                        command=lambda t=item_title, v=var: on_item_check(t, v)
+                    # --- [수정] 헬퍼 함수로 항목 생성 ---
+                    create_live_item_row(
+                        inner_content_frame, 
+                        item_title, 
+                        icon, 
+                        raw_windows
                     )
-                    chk.pack(side=LEFT, padx=(5,0))
-                    
-                    close_button = ttk.Button(
-                        item_frame, text="X", bootstyle="danger-outline", width=2,
-                        command=lambda title=item_title: on_close_item_click(title)
-                    )
-                    close_button.pack(side=RIGHT, padx=5)
-
-                    icon_label = ttk.Label(item_frame, text=icon, width=2, anchor="center")
-                    icon_label.pack(side=LEFT, padx=(0, 2))
-                    
-                    text_label = ttk.Label(
-                        item_frame, text=item_title, 
-                        font=("Arial", 10), cursor="hand2"
-                    )
-                    text_label.pack(side=LEFT, anchor="w", padx=(0, 5)) 
-                    text_label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
+                    # --- [수정 끝] ---
             
             toggle_btn.config(command=lambda f=inner_content_frame, b=toggle_btn: toggle_frame(f, b))
-            
             all_toggles.append((inner_content_frame, toggle_btn))
 
-    tab_collapse_all_btn.config(command=lambda tl=all_toggles: on_collapse_all_groups(tl))
-    tab_expand_all_btn.config(command=lambda tl=all_toggles: on_expand_all_groups(tl))
+    # (전체 접기/펴기 버튼 command 설정은 헬퍼 함수 내부로 이동됨)
 
 
 def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
@@ -226,49 +165,16 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container
 
-    top_controls_frame = ttk.Frame(container)
-    
-    # --- [수정] ---
-    # 상단 여백을 10으로 다시 설정
-    top_controls_frame.pack(fill=X, padx=5, pady=(10, 10))
+    # --- [수정] 헬퍼 함수로 상단 컨트롤 생성 ---
+    create_tab_top_controls(
+        container,
+        search_var=app_state.global_search_query_raw,
+        search_tab_name='raw',
+        all_toggles_list=all_toggles,
+        on_select_all_cb=lambda tabs=raw_tabs_data, wins=raw_windows: on_select_all_in_raw_tab(tabs, wins),
+        on_deselect_all_cb=lambda tabs=raw_tabs_data, wins=raw_windows: on_deselect_all_in_raw_tab(tabs, wins)
+    )
     # --- [수정 끝] ---
-
-    button_frame = ttk.Frame(top_controls_frame)
-    button_frame.pack(side=LEFT)
-
-    tab_select_all_btn = ttk.Button(
-        button_frame, text="탭 전체 선택", bootstyle="info",
-        command=lambda tabs=raw_tabs_data, wins=raw_windows: on_select_all_in_raw_tab(tabs, wins)
-    )
-    tab_select_all_btn.pack(side=LEFT, padx=(0, 5))
-    
-    tab_deselect_all_btn = ttk.Button(
-        button_frame, text="탭 전체 해제", bootstyle="warning",
-        command=lambda tabs=raw_tabs_data, wins=raw_windows: on_deselect_all_in_raw_tab(tabs, wins)
-    )
-    tab_deselect_all_btn.pack(side=LEFT, padx=(0, 5))
-    
-    tab_collapse_all_btn = ttk.Button(
-        button_frame, text="전체 접기", bootstyle="light",
-    )
-    tab_collapse_all_btn.pack(side=LEFT, padx=(5, 5))
-    
-    tab_expand_all_btn = ttk.Button(
-        button_frame, text="전체 열기", bootstyle="light",
-    )
-    tab_expand_all_btn.pack(side=LEFT, padx=(0, 5))
-
-    search_frame = ttk.Frame(top_controls_frame)
-    search_frame.pack(side=RIGHT, fill=X, expand=True)
-    
-    search_label = ttk.Label(search_frame, text="검색:")
-    search_label.pack(side=LEFT, padx=(5, 5))
-    
-    search_entry = ttk.Entry(search_frame, textvariable=app_state.global_search_query_raw)
-    search_entry.pack(side=LEFT, fill=X, expand=True)
-    search_entry.bind("<Return>", lambda e: on_search_enter(e, 'raw'))
-    
-    ttk.Separator(container).pack(fill=X, padx=5, pady=5)
 
     # --- (검색 필터링 동일) ---
     query = app_state.global_search_query_raw.get().lower()
@@ -313,31 +219,14 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
         ttk.Label(prog_items_frame, text="- 열린 프로그램이 없습니다 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
     else:
         for item_title in filtered_windows:
-            item_frame = ttk.Frame(prog_items_frame) 
-            item_frame.pack(fill=X, padx=10)
-            
-            var = tk.BooleanVar()
-            if item_title in app_state.selected_items_set:
-                var.set(True)
-            chk = ttk.Checkbutton(
-                item_frame, 
-                variable=var,
-                command=lambda t=item_title, v=var: on_item_check(t, v)
+            # --- [수정] 헬퍼 함수로 항목 생성 ---
+            create_live_item_row(
+                prog_items_frame,
+                item_title,
+                "🖥️",
+                raw_windows
             )
-            chk.pack(side=LEFT, padx=(5,0))
-            
-            close_button = ttk.Button(
-                item_frame, text="X", bootstyle="danger-outline", width=2,
-                command=lambda title=item_title: on_close_item_click(title) 
-            )
-            close_button.pack(side=RIGHT, padx=5)
-
-            icon_label = ttk.Label(item_frame, text="🖥️", width=2, anchor="center")
-            icon_label.pack(side=LEFT, padx=(0, 2))
-            
-            text_label = ttk.Label(item_frame, text=item_title, font=("Arial", 10), cursor="hand2") 
-            text_label.pack(side=LEFT, anchor="w", padx=(0, 5))
-            text_label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
+            # --- [수정 끝] ---
             
     prog_toggle_btn.config(command=lambda f=prog_items_frame, b=prog_toggle_btn: toggle_frame(f, b))
     all_toggles.append((prog_items_frame, prog_toggle_btn))
@@ -378,37 +267,19 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     else:
         for tab_dict in filtered_tabs:
             item_title = tab_dict['title']
-            item_frame = ttk.Frame(tab_items_frame) 
-            item_frame.pack(fill=X, padx=10)
-            
-            var = tk.BooleanVar()
-            if item_title in app_state.selected_items_set:
-                var.set(True)
-            chk = ttk.Checkbutton(
-                item_frame, 
-                variable=var,
-                command=lambda t=item_title, v=var: on_item_check(t, v)
+            # --- [수정] 헬퍼 함수로 항목 생성 ---
+            create_live_item_row(
+                tab_items_frame,
+                item_title,
+                "🌐",
+                raw_windows
             )
-            chk.pack(side=LEFT, padx=(5,0))
-
-            close_button = ttk.Button(
-                item_frame, text="X", bootstyle="danger-outline", width=2,
-                command=lambda title=item_title: on_close_item_click(title) 
-            )
-            close_button.pack(side=RIGHT, padx=5)
-
-            icon_label = ttk.Label(item_frame, text="🌐", width=2, anchor="center")
-            icon_label.pack(side=LEFT, padx=(0, 2))
-            
-            text_label = ttk.Label(item_frame, text=item_title, font=("Arial", 10), cursor="hand2")
-            text_label.pack(side=LEFT, anchor="w", padx=(0, 5))
-            text_label.bind("<Button-1>", lambda e, t=item_title: on_item_click(t, raw_windows))
+            # --- [수정 끝] ---
             
     tab_toggle_btn.config(command=lambda f=tab_items_frame, b=tab_toggle_btn: toggle_frame(f, b))
     all_toggles.append((tab_items_frame, tab_toggle_btn))
 
-    tab_collapse_all_btn.config(command=lambda tl=all_toggles: on_collapse_all_groups(tl))
-    tab_expand_all_btn.config(command=lambda tl=all_toggles: on_expand_all_groups(tl))
+    # (전체 접기/펴기 버튼 command 설정은 헬퍼 함수 내부로 이동됨)
 
 
 def update_saved_sessions_tab(parent_frame):
@@ -424,37 +295,15 @@ def update_saved_sessions_tab(parent_frame):
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container 
 
-    top_controls_frame = ttk.Frame(container)
-    
-    # --- [수정] ---
-    # 상단 여백을 10으로 다시 설정
-    top_controls_frame.pack(fill=X, padx=5, pady=(10, 10))
+    # --- [수정] 헬퍼 함수로 상단 컨트롤 생성 ---
+    create_tab_top_controls(
+        container,
+        search_var=app_state.global_search_query_saved,
+        search_tab_name='saved',
+        all_toggles_list=all_toggles
+        # (선택/해제/새로고침 콜백은 이 탭에 필요 없으므로 전달 안 함)
+    )
     # --- [수정 끝] ---
-
-    button_frame = ttk.Frame(top_controls_frame)
-    button_frame.pack(side=LEFT)
-
-    tab_collapse_all_btn = ttk.Button(
-        button_frame, text="전체 접기", bootstyle="light",
-    )
-    tab_collapse_all_btn.pack(side=LEFT, padx=(0, 5))
-    
-    tab_expand_all_btn = ttk.Button(
-        button_frame, text="전체 열기", bootstyle="light",
-    )
-    tab_expand_all_btn.pack(side=LEFT, padx=(0, 5))
-
-    search_frame = ttk.Frame(top_controls_frame)
-    search_frame.pack(side=RIGHT, fill=X, expand=True)
-
-    search_label = ttk.Label(search_frame, text="검색:")
-    search_label.pack(side=LEFT, padx=(5, 5))
-    
-    search_entry = ttk.Entry(search_frame, textvariable=app_state.global_search_query_saved)
-    search_entry.pack(side=LEFT, fill=X, expand=True)
-    search_entry.bind("<Return>", lambda e: on_search_enter(e, 'saved'))
-    
-    ttk.Separator(container).pack(fill=X, padx=5, pady=5)
 
     # --- (검색 필터링 동일) ...
     saved_sessions = load_sessions()
@@ -483,7 +332,7 @@ def update_saved_sessions_tab(parent_frame):
         else:
             ttk.Label(container, text="저장된 작업이 없습니다.", font=("Arial", 12)).pack(pady=10)
     else:
-        for session_group in reversed(filtered_sessions):
+        for session_group in reversed(filtered_sessions): # 최근 항목이 위로
             category_name = session_group.get('category', '알 수 없음')
             summary = session_group.get('summary', '요약 없음')
             items_data = session_group.get('items', []) 
@@ -536,6 +385,7 @@ def update_saved_sessions_tab(parent_frame):
             group_delete_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
             
             items_frame = ttk.Frame(group_frame)
+            # (기본값 닫힘 - pack()을 호출하지 않음)
             
             if not items_data:
                 ttk.Label(items_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
@@ -565,8 +415,16 @@ def update_saved_sessions_tab(parent_frame):
                         item_title = str(item_data) 
                         icon = "❓" 
 
-                    icon_label = ttk.Label(item_list_frame, text=icon, width=2, anchor="center")
+                    # --- [수정] font=... 대신 style=... 사용 ---
+                    icon_label = ttk.Label(
+                        item_list_frame, 
+                        text=icon, 
+                        width=3, 
+                        anchor="center",
+                        style="SavedIcon.TLabel" # <--- 수정
+                    )
                     icon_label.pack(side=LEFT, padx=(10, 2))
+                    # --- [수정 끝] ---
                     
                     text_label = ttk.Label(
                         item_list_frame, 
@@ -598,9 +456,143 @@ def update_saved_sessions_tab(parent_frame):
             
             all_toggles.append((items_frame, toggle_btn))
 
-    tab_collapse_all_btn.config(command=lambda tl=all_toggles: on_collapse_all_groups(tl))
-    tab_expand_all_btn.config(command=lambda tl=all_toggles: on_expand_all_groups(tl))
+    # (전체 접기/펴기 버튼 command 설정은 헬퍼 함수 내부로 이동됨)
 
+
+# 
+# --- [신규] 재사용 가능한 UI 빌더 헬퍼 함수 ---
+# 
+
+def create_tab_top_controls(
+    parent_container, 
+    search_var, 
+    search_tab_name, 
+    all_toggles_list,
+    on_select_all_cb=None,
+    on_deselect_all_cb=None,
+    on_force_refresh_cb=None
+):
+    """
+    각 탭의 상단 컨트롤 영역(선택, 접기, 검색)을 생성하는 
+    재사용 가능한 헬퍼 함수
+    """
+    top_controls_frame = ttk.Frame(parent_container)
+    top_controls_frame.pack(fill=X, padx=5, pady=(10, 10))
+
+    button_frame = ttk.Frame(top_controls_frame)
+    button_frame.pack(side=LEFT)
+
+    # 1. (선택적) 전체 선택/해제 버튼
+    if on_select_all_cb:
+        tab_select_all_btn = ttk.Button(
+            button_frame, text="전체 선택", bootstyle="info",
+            command=on_select_all_cb
+        )
+        tab_select_all_btn.pack(side=LEFT, padx=(0, 5))
+    
+    if on_deselect_all_cb:
+        tab_deselect_all_btn = ttk.Button(
+            button_frame, text="전체 해제", bootstyle="warning",
+            command=on_deselect_all_cb
+        )
+        tab_deselect_all_btn.pack(side=LEFT, padx=(0, 5))
+
+    # 2. 전체 접기/열기 버튼 (all_toggles_list를 사용)
+    tab_collapse_all_btn = ttk.Button(
+        button_frame, text="전체 접기", bootstyle="light",
+        command=lambda tl=all_toggles_list: on_collapse_all_groups(tl)
+    )
+    tab_collapse_all_btn.pack(side=LEFT, padx=(5, 5))
+    
+    tab_expand_all_btn = ttk.Button(
+        button_frame, text="전체 열기", bootstyle="light",
+        command=lambda tl=all_toggles_list: on_expand_all_groups(tl)
+    )
+    tab_expand_all_btn.pack(side=LEFT, padx=(0, 5))
+
+    # 3. 검색창
+    search_frame = ttk.Frame(top_controls_frame)
+    search_frame.pack(side=RIGHT, fill=X, expand=True)
+
+    search_label = ttk.Label(search_frame, text="검색:")
+    search_label.pack(side=LEFT, padx=(5, 5)) 
+    
+    # 4. (선택적) 새로고침 버튼
+    if on_force_refresh_cb:
+        # --- [수정] font=... 대신 style=... 사용 ---
+        refresh_btn = ttk.Button(
+            search_frame, 
+            text="↻", 
+            width=3, 
+            bootstyle="light",
+            command=on_force_refresh_cb,
+            style="Refresh.TButton" # <--- 수정
+        )
+        refresh_btn.pack(side=RIGHT, padx=(5, 0))
+        # --- [수정 끝] ---
+    
+    search_entry = ttk.Entry(search_frame, textvariable=search_var)
+    search_entry.pack(side=LEFT, fill=X, expand=True)
+    
+    # on_search_enter 콜백 바인딩
+    search_entry.bind(
+        "<Return>", 
+        lambda e, name=search_tab_name: on_search_enter(e, name)
+    )
+    
+    ttk.Separator(parent_container).pack(fill=X, padx=5, pady=5)
+
+
+def create_live_item_row(parent_frame, item_title, item_icon, raw_windows_list):
+    """
+    '라이브 탭'(AI 요약, 전체 목록)의 개별 항목(행)을 생성하는
+    재사용 가능한 헬퍼 함수 (체크박스, 닫기, 클릭 기능 포함)
+    """
+    item_frame = ttk.Frame(parent_frame) 
+    item_frame.pack(fill=X, padx=10) 
+    
+    # 1. 체크박스
+    var = tk.BooleanVar()
+    if item_title in app_state.selected_items_set:
+        var.set(True)
+    chk = ttk.Checkbutton(
+        item_frame,
+        variable=var,
+        command=lambda t=item_title, v=var: on_item_check(t, v)
+    )
+    chk.pack(side=LEFT, padx=(5,0))
+    
+    # 2. 닫기 버튼
+    close_button = ttk.Button(
+        item_frame, text="X", bootstyle="danger-outline", width=2,
+        command=lambda title=item_title: on_close_item_click(title)
+    )
+    close_button.pack(side=RIGHT, padx=5)
+
+    # 3. 아이콘
+    # --- [수정] font=... 대신 style=... 사용 ---
+    icon_label = ttk.Label(
+        item_frame, 
+        text=item_icon, 
+        width=3, 
+        anchor="center",
+        style="Icon.TLabel" # <--- 수정
+        )
+    icon_label.pack(side=LEFT, padx=(0, 2))
+    # --- [수정 끝] ---
+    
+    # 4. 클릭 가능한 텍스트 레이블
+    text_label = ttk.Label(
+        item_frame, text=item_title, 
+        font=("Arial", 10), cursor="hand2"
+    )
+    text_label.pack(side=LEFT, anchor="w", padx=(0, 5)) 
+    text_label.bind(
+        "<Button-1>", 
+        lambda e, t=item_title, w=raw_windows_list: on_item_click(t, w)
+    )
+
+# --- [기존 기능] ---
 
 def toggle_frame(frame, button):
     """(접기/펴기 콜백)"""
@@ -611,7 +603,6 @@ def toggle_frame(frame, button):
         frame.pack(fill=X, anchor="w", padx=0, pady=(5,0))
         button.config(text="▼")
 
-# --- [신규 기능] ---
 def on_collapse_all_groups(toggle_list):
     """리스트에 있는 모든 그룹을 접습니다."""
     print(f"[UI] {len(toggle_list)}개 그룹 전체 접기")
@@ -627,4 +618,3 @@ def on_expand_all_groups(toggle_list):
         if not frame.winfo_ismapped(): # 이미 닫혀있으면
             frame.pack(fill=X, anchor="w", padx=0, pady=(5,0))
             button.config(text="▼")
-# --- [신규 기능 끝] ---

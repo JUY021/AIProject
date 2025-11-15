@@ -151,6 +151,16 @@ if __name__ == "__main__":
         font=("Arial", 14, "bold"), foreground=default_fg      
     )
 
+    try:
+        # 1. AI 탭 새로고침 버튼용 스타일
+        style.configure("Refresh.TButton", font=("Arial", 11))
+        # 2. '라이브 탭' (AI, 전체) 아이콘용 스타일
+        style.configure("Icon.TLabel", font=("Arial", 11))
+        # 3. '저장된 탭' 아이콘용 스타일
+        style.configure("SavedIcon.TLabel", font=("Arial", 11))
+    except Exception as e:
+        print(f"!!! 스타일 설정 오류: {e} !!!")
+
     # 5. 메인 레이아웃 (제목, 탭)
     title_label = ttk.Label(root, text="대시보드", font=("Arial", 20, "bold"))
     title_label.pack(pady=10)
