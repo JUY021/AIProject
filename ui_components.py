@@ -25,7 +25,7 @@ class ScrollableTab(ttk.Frame):
 
         # 4. 캔버스 내부에 '실제 내용이 들어갈' 프레임 생성
         # 이 container가 ai_summary_container 또는 raw_list_container가 됩니다.
-        self.container = ttk.Frame(self.canvas)
+        self.container = ttk.Frame(self.canvas, padding=0)
         self.canvas.create_window((0, 0), window=self.container, anchor="nw")
 
         # 5. 스크롤 영역 및 너비 자동 업데이트 바인딩
@@ -50,7 +50,7 @@ class ScrollableTab(ttk.Frame):
         # 현재 마우스 커서 아래의 위젯이 이 캔버스 소속인지 확인
         widget = self.winfo_containing(event.x_root, event.y_root)
         if widget is None or not str(widget).startswith(str(self.canvas)):
-             return # 이 캔버스 관련 스크롤이 아니면 무시
+            return # 이 캔버스 관련 스크롤이 아니면 무시
             
         try:
             # Windows/macOS

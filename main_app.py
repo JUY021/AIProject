@@ -17,7 +17,7 @@ from websocket_server import start_server_thread
 # 3. 분리된 모듈
 from app_workers import ai_worker_thread
 from ui_builders import update_ai_summary_tab, update_raw_list_tab, update_saved_sessions_tab
-from app_callbacks import on_save_selected_click, on_close_selected_click
+from app_callbacks import on_save_selected_click, on_close_selected_click, on_force_ai_refresh
 # --- [수정 끝] ---
 
 
@@ -84,6 +84,16 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
                 )
             except Exception as e:
                 print(f"[DEBUG] !!! 라이브 탭(Raw/AI) 갱신 중 오류 발생: {e} !!!")
+                
+        elif message_type == 'force_ai_refresh':
+            print("[DEBUG] UI 큐: 'AI 수동 갱신' 요청 수신.")
+            # AI 작업자에게 현재 최신 데이터를 기반으로 작업을 지시
+            # (AI Worker의 15초 디바운싱이 적용됨)
+            job_data = {
+                'raw_tabs_data': app_state.global_last_raw_tabs_data,
+                'raw_windows': app_state.global_last_raw_windows
+            }
+            app_state.job_queue.put(job_data)
 
         elif message_data.get('error'):
             print(f"UI 큐 오류 수신: {message_data['error']}")
@@ -120,7 +130,7 @@ if __name__ == "__main__":
     
     # 3. 메인 UI 윈도우 생성
     root = ttk.Window(themename="superhero")
-    root.title("내 작업 요약기 (AIProject)")
+    root.title("WorkDash")
     root.geometry("600x700")
 
     # --- [수정] app_state에 정의된 Tkinter 변수 초기화 ---
@@ -142,7 +152,7 @@ if __name__ == "__main__":
     )
 
     # 5. 메인 레이아웃 (제목, 탭)
-    title_label = ttk.Label(root, text="실시간 작업 요약 대시보드", font=("Arial", 16, "bold"))
+    title_label = ttk.Label(root, text="대시보드", font=("Arial", 20, "bold"))
     title_label.pack(pady=10)
 
     notebook = ttk.Notebook(root)

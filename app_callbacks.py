@@ -230,3 +230,10 @@ def on_search_enter(event, tab_name):
         app_state.ui_queue.put({'type': 'refresh_saved_tab'})
     else:
         app_state.ui_queue.put({'type': 'force_live_refresh'})
+
+# --- [신규 기능 5] ---
+def on_force_ai_refresh():
+    """(신규) '관련 작업' 탭의 새로고침 버튼 콜백"""
+    print("[Refresh] AI 그룹 갱신을 수동으로 요청합니다.")
+    # check_queue가 이 메시지를 받고 job_queue에 작업을 넣도록 함
+    app_state.ui_queue.put({'type': 'force_ai_refresh'})
