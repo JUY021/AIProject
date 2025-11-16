@@ -19,6 +19,14 @@ def ai_worker_thread():
             # [수정] app_state에서 큐를 직접 참조
             job_data = job_q.get() 
             print("[DEBUG] AI 작업자: 새 작업 감지. 15초 디바운스 시작...")
+            
+            # --- [신규] '요약 중' 상태 설정 및 UI 갱신 요청 ---
+            if app_state.global_is_ai_summarizing:
+                app_state.global_is_ai_summarizing.set(True)
+                # 'force_live_refresh'는 AI탭과 Raw탭을 모두 갱신함
+                ui_q.put({'type': 'force_live_refresh'})
+            # --- [신규 끝] ---
+
             time.sleep(DEBOUNCE_SECONDS)
             try:
                 while True:
@@ -37,7 +45,11 @@ def ai_worker_thread():
                 titles_for_ai, 
                 windows_titles
             )
-            
+
+            # '요약 중' 상태 해제
+            if app_state.global_is_ai_summarizing:
+                app_state.global_is_ai_summarizing.set(False)
+
             ai_data_for_ui = {
                 'type': 'ai_update', 
                 'ai_summary': ai_summary_json,
@@ -47,4 +59,7 @@ def ai_worker_thread():
             ui_q.put(ai_data_for_ui)
             print("[DEBUG] AI 작업자: 작업 완료. UI 큐에 'AI 결과' 전송.")
         except Exception as e:
+            # 오류 발생 시에도 '요약 중' 상태 해제
+            if app_state.global_is_ai_summarizing:
+                app_state.global_is_ai_summarizing.set(False)
             print(f"AI 작업자(Worker) 스레드 오류: {e}")

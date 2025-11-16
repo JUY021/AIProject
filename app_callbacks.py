@@ -2,6 +2,7 @@
 
 import json
 from tkinter import simpledialog
+from tkinter import filedialog
 
 # 전역 상태 및 유틸리티 import
 import app_state
@@ -231,9 +232,75 @@ def on_search_enter(event, tab_name):
     else:
         app_state.ui_queue.put({'type': 'force_live_refresh'})
 
-# --- [신규 기능 5] ---
 def on_force_ai_refresh():
     """(신규) '관련 작업' 탭의 새로고침 버튼 콜백"""
     print("[Refresh] AI 그룹 갱신을 수동으로 요청합니다.")
     # check_queue가 이 메시지를 받고 job_queue에 작업을 넣도록 함
     app_state.ui_queue.put({'type': 'force_ai_refresh'})
+
+def on_export_group_click(group_data):
+    """(신규) '저장된 탭'의 그룹을 개별 JSON 파일로 내보냅니다."""
+    category = group_data.get('category', '저장된_그룹')
+    # 파일명으로 부적절한 문자 제거
+    default_filename = "".join(
+        c for c in category if c.isalnum() or c in (' ', '_', '-')
+    ).rstrip() + ".json"
+
+    print(f"'{category}' 그룹 내보내기 요청...")
+
+    file_path = filedialog.asksaveasfilename(
+        title=f"'{category}' 그룹 저장 위치 선택",
+        initialfile=default_filename,
+        defaultextension=".json",
+        filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+    )
+
+    if not file_path:
+        print("  -> 사용자가 내보내기를 취소했습니다.")
+        return
+
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            # 단일 그룹 객체만 파일에 씀 (리스트 아님)
+            json.dump(group_data, f, ensure_ascii=False, indent=4)
+        print(f"  -> 그룹을 '{file_path}'에 성공적으로 저장했습니다.")
+    except Exception as e:
+        print(f"  -> 파일 저장 중 오류 발생: {e}")
+
+def on_import_session_click(root):
+    """(신규) '내보낸' 세션 JSON 파일을 불러와 '저장된 탭'에 추가합니다."""
+    print("세션 가져오기 요청...")
+
+    file_paths = filedialog.askopenfilenames(
+        title="가져올 세션 파일 선택 (여러 개 선택 가능)",
+        filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        parent=root
+    )
+
+    if not file_paths:
+        print("  -> 사용자가 가져오기를 취소했습니다.")
+        return
+
+    imported_count = 0
+    for file_path in file_paths:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                group_data = json.load(f)
+            
+            # (중요) group_data가 딕셔너리(단일 그룹)인지 확인
+            if isinstance(group_data, dict) and 'category' in group_data:
+                # session_utils.save_session을 재사용하여 리스트에 추가
+                # (save_session이 알아서 saved_at 타임스탬프를 새로 찍어줌)
+                if save_session(group_data):
+                    imported_count += 1
+                    print(f"  -> '{group_data.get('category')}' 그룹 가져오기 성공.")
+                else:
+                    print(f"  -> '{file_path}' 저장 실패 (save_session 오류)")
+            else:
+                    print(f"  -> '{file_path}'는 유효한 단일 그룹 파일이 아닙니다 (건너뜀).")
+        except Exception as e:
+            print(f"  -> '{file_path}' 파일 읽기/처리 중 오류 발생: {e}")
+            
+    if imported_count > 0:
+        print(f"총 {imported_count}개의 그룹을 가져왔습니다. 탭을 갱신합니다.")
+        app_state.ui_queue.put({'type': 'refresh_saved_tab'})

@@ -1,5 +1,5 @@
 # ui_builders.py
-# (스타일 방식으로 수정 완료)
+# (기능 3개 추가 완료)
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -14,12 +14,29 @@ from ui_components import ScrollableTab
 from session_utils import load_sessions
 
 # 
+# --- [신규] 브라우저 아이콘/스타일 매핑 헬퍼 ---
+#
+def get_browser_icon_and_style(browser_name_raw):
+    """브라우저 이름(소문자)을 받아 아이콘(이모지)과 스타일 이름을 반환"""
+    b = browser_name_raw.lower()
+    
+    if 'chrome' in b:
+        return "🌍", "ChromeIcon.TLabel" # (아이콘, 스타일)
+    elif 'firefox' in b:
+        return "🔥", "FirefoxIcon.TLabel"
+    elif 'edge' in b:
+        return "🌐", "EdgeIcon.TLabel" # (기본 🌐 아이콘 사용)
+    else:
+        # 'unknown' 또는 기타
+        return "🌐", "DefaultBrowserIcon.TLabel" 
+
+
+# 
 # --- [main_app.py에서 이동된 UI 렌더링 함수들] ---
 # 
 
-def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_windows):
+def update_ai_summary_tab(parent_frame, root, ai_summary_json, raw_tabs_data, raw_windows):
     """(탭 1) "관련 작업" 탭 UI 갱신"""
-    print(f"[DEBUG] 'AI 요약 탭' UI 재생성... (선택 {len(app_state.selected_items_set)}개 복원)")
     
     all_toggles = []
     
@@ -30,12 +47,42 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
     scroll_tab.pack(fill=BOTH, expand=YES)
     container = scroll_tab.container 
 
-    url_lookup = {tab['title']: tab['url'] for tab in raw_tabs_data}
-    current_tab_titles = list(url_lookup.keys())
+    # --- [신규] 'AI 요약 중' 상태 표시 ---
+    if app_state.global_is_ai_summarizing and app_state.global_is_ai_summarizing.get():
+        print("[DEBUG] 'AI 요약 탭' UI: '요약 중' 화면 표시...")
+        loading_frame = ttk.Frame(container, padding=20)
+        loading_frame.pack(fill=BOTH, expand=YES, anchor=CENTER)
+        
+        ttk.Label(
+            loading_frame, 
+            text="AI가 작업을 요약하는 중입니다...", 
+            font=("Arial", 14, "bold"),
+            bootstyle="info"
+        ).pack(pady=10, anchor=CENTER)
+        
+        # ttk.Label(
+        #     loading_frame, 
+        #     text="(최대 15초 소요)", 
+        #     font=("Arial", 10, "italic"),
+        #     bootstyle="secondary"
+        # ).pack(pady=5, anchor=CENTER)
+        
+        pb = ttk.Progressbar(loading_frame, mode='indeterminate', bootstyle="info")
+        pb.pack(fill=X, padx=50, pady=10, anchor=CENTER)
+        pb.start(10) # 10ms 간격으로 이동
+        
+        return # '요약 중' 화면을 표시하고 나머지 UI 렌더링 중단
+    # --- [신규 끝] ---
+    
+    print(f"[DEBUG] 'AI 요약 탭' UI 재생성... (선택 {len(app_state.selected_items_set)}개 복원)")
+
+    # [수정] URL뿐 아니라 'browser' 정보도 조회할 수 있도록 전체 tab 객체를 저장
+    tab_lookup = {tab['title']: tab for tab in raw_tabs_data}
     
     # --- [수정] 헬퍼 함수로 상단 컨트롤 생성 ---
     create_tab_top_controls(
         container,
+        root, # [수정] root 전달
         search_var=app_state.global_search_query_ai,
         search_tab_name='ai',
         all_toggles_list=all_toggles,
@@ -93,12 +140,17 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
             hydrated_group_data = json.loads(json.dumps(category_group))
             hydrated_items_list = [] 
             for title in items_titles_only:
-                item_url = url_lookup.get(title) 
-                if item_url:
-                    hydrated_items_list.append({"type": "tab", "title": title, "url": item_url})
-                elif title in raw_windows:
+                tab_info = tab_lookup.get(title) # [수정]
+                if tab_info: # 탭인 경우
+                    hydrated_items_list.append({
+                        "type": "tab", 
+                        "title": title, 
+                        "url": tab_info.get('url'),
+                        "browser": tab_info.get('browser', 'unknown') # [신규]
+                    })
+                elif title in raw_windows: # 창인 경우
                     hydrated_items_list.append({"type": "window", "title": title})
-                else:
+                else: # 알 수 없는 경우
                     hydrated_items_list.append({"type": "unknown", "title": title})
             hydrated_group_data['items'] = hydrated_items_list
             
@@ -134,15 +186,25 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
                 ttk.Label(inner_content_frame, text="- 항목 없음 -", font=("Arial", 10, "italic")).pack(anchor="w", padx=10)
             else:
                 for item_title in items_titles_only:
-                    icon = "•" 
-                    if item_title in raw_windows: icon = "🖥️"
-                    elif item_title in current_tab_titles: icon = "🌐"
+                    
+                    # --- [신규] 아이콘 및 스타일 결정 로직 ---
+                    icon = "•"
+                    icon_style = "Icon.TLabel" # 기본값
+                    
+                    if item_title in raw_windows: 
+                        icon = "🖥️"
+                    elif item_title in tab_lookup:
+                        browser = tab_lookup[item_title].get('browser', 'unknown')
+                        icon, icon_style = get_browser_icon_and_style(browser)
+                    # --- [신규 끝] ---
+                        
                     
                     # --- [수정] 헬퍼 함수로 항목 생성 ---
                     create_live_item_row(
                         inner_content_frame, 
                         item_title, 
-                        icon, 
+                        icon,
+                        icon_style, # [신규] 스타일 전달
                         raw_windows
                     )
                     # --- [수정 끝] ---
@@ -153,7 +215,7 @@ def update_ai_summary_tab(parent_frame, ai_summary_json, raw_tabs_data, raw_wind
     # (전체 접기/펴기 버튼 command 설정은 헬퍼 함수 내부로 이동됨)
 
 
-def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
+def update_raw_list_tab(parent_frame, root, raw_tabs_data, raw_windows):
     """(탭 2) "전체 목록" 탭 UI 갱신"""
     print(f"[DEBUG] '전체 목록 탭' UI 재생성... (선택 {len(app_state.selected_items_set)}개 복원)")
     
@@ -168,6 +230,7 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     # --- [수정] 헬퍼 함수로 상단 컨트롤 생성 ---
     create_tab_top_controls(
         container,
+        root, # [수정] root 전달
         search_var=app_state.global_search_query_raw,
         search_tab_name='raw',
         all_toggles_list=all_toggles,
@@ -184,7 +247,10 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     if query:
         print(f"  -> '전체 목록' 탭 '{query}'로 필터링")
         filtered_windows = [w for w in raw_windows if query in w.lower()]
-        filtered_tabs = [t for t in raw_tabs_data if query in t['title'].lower()]
+        filtered_tabs = [
+            t for t in raw_tabs_data 
+            if query in t['title'].lower() or query in t['url'].lower()
+        ]
 
     # (프로그램 창 부분)
     prog_frame = ttk.Labelframe(
@@ -224,6 +290,7 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
                 prog_items_frame,
                 item_title,
                 "🖥️",
+                "Icon.TLabel", # [신규] 스타일 전달
                 raw_windows
             )
             # --- [수정 끝] ---
@@ -267,11 +334,18 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     else:
         for tab_dict in filtered_tabs:
             item_title = tab_dict['title']
+            
+            # --- [신규] 아이콘 및 스타일 결정 로직 ---
+            browser = tab_dict.get('browser', 'unknown')
+            icon, icon_style = get_browser_icon_and_style(browser)
+            # --- [신규 끝] ---
+            
             # --- [수정] 헬퍼 함수로 항목 생성 ---
             create_live_item_row(
                 tab_items_frame,
                 item_title,
-                "🌐",
+                icon,
+                icon_style, # [신규] 스타일 전달
                 raw_windows
             )
             # --- [수정 끝] ---
@@ -282,8 +356,11 @@ def update_raw_list_tab(parent_frame, raw_tabs_data, raw_windows):
     # (전체 접기/펴기 버튼 command 설정은 헬퍼 함수 내부로 이동됨)
 
 
-def update_saved_sessions_tab(parent_frame):
-    """(탭 3) "저장된 작업" 탭 UI 갱신 (기본값 접힘)"""
+def update_saved_sessions_tab(parent_frame, root):
+    """
+    (탭 3) "저장된 작업" 탭 UI 갱신 (기본값 접힘)
+    [수정] 'root'를 인자로 받아 파일 다이얼로그의 부모로 사용
+    """
     print(f"[DEBUG] '저장된 작업 탭' UI 재생성...")
     
     all_toggles = []
@@ -298,10 +375,12 @@ def update_saved_sessions_tab(parent_frame):
     # --- [수정] 헬퍼 함수로 상단 컨트롤 생성 ---
     create_tab_top_controls(
         container,
+        root, # [수정] root 전달
         search_var=app_state.global_search_query_saved,
         search_tab_name='saved',
-        all_toggles_list=all_toggles
-        # (선택/해제/새로고침 콜백은 이 탭에 필요 없으므로 전달 안 함)
+        all_toggles_list=all_toggles,
+        # [신규] '가져오기' 콜백 전달
+        on_import_cb=lambda: on_import_session_click(root)
     )
     # --- [수정 끝] ---
 
@@ -316,7 +395,9 @@ def update_saved_sessions_tab(parent_frame):
         
         def item_matches(item, query):
             if isinstance(item, dict):
-                return query in item.get('title', '').lower()
+                title = item.get('title', '').lower()
+                url = item.get('url', '').lower()
+                return query in title or query in url
             else:
                 return query in str(item).lower()
                 
@@ -366,6 +447,17 @@ def update_saved_sessions_tab(parent_frame):
             )
             summary_label.pack(side=LEFT, anchor="w", fill=X, expand=YES, pady=(0, 10), padx=5)
             
+            # --- [신규] '내보내기' 버튼 추가 ---
+            export_button = ttk.Button(
+                top_frame,
+                text="내보내기",
+                bootstyle="info-outline",
+                width=8,
+                command=lambda group=session_group: on_export_group_click(group)
+            )
+            export_button.pack(side=RIGHT, padx=(5, 0), pady=(0, 10))
+            # --- [신규 끝] ---
+            
             restore_button = ttk.Button(
                 top_frame,
                 text="그룹 복원",
@@ -398,13 +490,17 @@ def update_saved_sessions_tab(parent_frame):
                     item_title = ""
                     item_url = None
                     is_restorable = False 
+                    icon_style = "SavedIcon.TLabel" # [신규]
 
                     if isinstance(item_data, dict):
                         item_type = item_data.get('type', 'unknown')
                         item_title = item_data.get('title', '제목 없음')
                         
                         if item_type == 'tab':
-                            icon = "🌐"
+                            # [신규] 저장된 탭의 브라우저 아이콘/스타일 결정
+                            browser = item_data.get('browser', 'unknown')
+                            icon, icon_style = get_browser_icon_and_style(browser)
+                            
                             item_url = item_data.get('url')
                             if item_url: 
                                 is_restorable = True 
@@ -415,13 +511,12 @@ def update_saved_sessions_tab(parent_frame):
                         item_title = str(item_data) 
                         icon = "❓" 
 
-                    # --- [수정] font=... 대신 style=... 사용 ---
+                    # --- [수정] width 제거, style 적용 ---
                     icon_label = ttk.Label(
                         item_list_frame, 
                         text=icon, 
-                        width=3, 
                         anchor="center",
-                        style="SavedIcon.TLabel" # <--- 수정
+                        style=icon_style
                     )
                     icon_label.pack(side=LEFT, padx=(10, 2))
                     # --- [수정 끝] ---
@@ -465,12 +560,14 @@ def update_saved_sessions_tab(parent_frame):
 
 def create_tab_top_controls(
     parent_container, 
+    root, # [신규] root 추가
     search_var, 
     search_tab_name, 
     all_toggles_list,
     on_select_all_cb=None,
     on_deselect_all_cb=None,
-    on_force_refresh_cb=None
+    on_force_refresh_cb=None,
+    on_import_cb=None # [신규] 가져오기 콜백
 ):
     """
     각 탭의 상단 컨트롤 영역(선택, 접기, 검색)을 생성하는 
@@ -485,14 +582,14 @@ def create_tab_top_controls(
     # 1. (선택적) 전체 선택/해제 버튼
     if on_select_all_cb:
         tab_select_all_btn = ttk.Button(
-            button_frame, text="전체 선택", bootstyle="info",
+            button_frame, text="탭 전체 선택", bootstyle="info",
             command=on_select_all_cb
         )
         tab_select_all_btn.pack(side=LEFT, padx=(0, 5))
     
     if on_deselect_all_cb:
         tab_deselect_all_btn = ttk.Button(
-            button_frame, text="전체 해제", bootstyle="warning",
+            button_frame, text="탭 전체 해제", bootstyle="warning",
             command=on_deselect_all_cb
         )
         tab_deselect_all_btn.pack(side=LEFT, padx=(0, 5))
@@ -510,6 +607,16 @@ def create_tab_top_controls(
     )
     tab_expand_all_btn.pack(side=LEFT, padx=(0, 5))
 
+    # [신규] 2.5 (선택적) '가져오기' 버튼
+    if on_import_cb:
+        import_btn = ttk.Button(
+            button_frame,
+            text="세션 가져오기",
+            bootstyle="success-outline",
+            command=on_import_cb
+        )
+        import_btn.pack(side=LEFT, padx=(5, 5))
+
     # 3. 검색창
     search_frame = ttk.Frame(top_controls_frame)
     search_frame.pack(side=RIGHT, fill=X, expand=True)
@@ -522,11 +629,11 @@ def create_tab_top_controls(
         # --- [수정] font=... 대신 style=... 사용 ---
         refresh_btn = ttk.Button(
             search_frame, 
-            text="↻", 
-            width=3, 
-            bootstyle="light",
+            text="↻", # [수정] 아이콘 변경
+            width=2, 
+            bootstyle="light-link", # [수정] 테두리 제거
             command=on_force_refresh_cb,
-            style="Refresh.TButton" # <--- 수정
+            style="Refresh.TButton" 
         )
         refresh_btn.pack(side=RIGHT, padx=(5, 0))
         # --- [수정 끝] ---
@@ -543,10 +650,11 @@ def create_tab_top_controls(
     ttk.Separator(parent_container).pack(fill=X, padx=5, pady=5)
 
 
-def create_live_item_row(parent_frame, item_title, item_icon, raw_windows_list):
+def create_live_item_row(parent_frame, item_title, item_icon, icon_style, raw_windows_list):
     """
     '라이브 탭'(AI 요약, 전체 목록)의 개별 항목(행)을 생성하는
     재사용 가능한 헬퍼 함수 (체크박스, 닫기, 클릭 기능 포함)
+    [수정] icon_style 추가
     """
     item_frame = ttk.Frame(parent_frame) 
     item_frame.pack(fill=X, padx=10) 
@@ -570,13 +678,12 @@ def create_live_item_row(parent_frame, item_title, item_icon, raw_windows_list):
     close_button.pack(side=RIGHT, padx=5)
 
     # 3. 아이콘
-    # --- [수정] font=... 대신 style=... 사용 ---
+    # --- [수정] width 제거, style 적용 ---
     icon_label = ttk.Label(
         item_frame, 
         text=item_icon, 
-        width=3, 
         anchor="center",
-        style="Icon.TLabel" # <--- 수정
+        style=icon_style
         )
     icon_label.pack(side=LEFT, padx=(0, 2))
     # --- [수정 끝] ---

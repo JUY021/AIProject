@@ -29,7 +29,7 @@ async def handler(websocket, ui_queue, job_queue):
                 # --- [수정] title만 뽑는 대신 (title, url) 딕셔너리 리스트 생성 ---
                 # (복원할 수 없는 chrome:// 탭 등은 제외)
                 tab_data = [
-                    {"title": tab.get('title'), "url": tab.get('url')} 
+                    {"title": tab.get('title'), "url": tab.get('url'), "browser": tab.get('browser', 'unknown')} 
                     for tab in tab_list 
                     if tab.get('title') and tab.get('url') and not tab.get('url').startswith('chrome://')
                 ]
@@ -47,7 +47,7 @@ async def handler(websocket, ui_queue, job_queue):
                 if current_state == last_processed_state:
                     continue 
                 
-                print("[DEBUG] 데이터 변경 감지 (URL 포함).")
+                print("[DEBUG] 데이터 변경 감지 (URL/Browser 포함).")
                 last_processed_state = current_state
 
                 # 3. 큐로 데이터 전송

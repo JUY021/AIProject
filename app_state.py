@@ -17,3 +17,4 @@ global_last_ai_summary = []
 global_search_query_ai = None
 global_search_query_raw = None
 global_search_query_saved = None
+global_is_ai_summarizing = None

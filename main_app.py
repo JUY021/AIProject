@@ -38,6 +38,7 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
             try:
                 update_raw_list_tab(
                     tab_raw_parent, 
+                    root,
                     app_state.global_last_raw_tabs_data, 
                     app_state.global_last_raw_windows
                 )
@@ -54,6 +55,7 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
             try:
                 update_ai_summary_tab(
                     tab_ai_parent, 
+                    root,
                     app_state.global_last_ai_summary,
                     app_state.global_last_raw_tabs_data,
                     app_state.global_last_raw_windows
@@ -64,7 +66,7 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
         elif message_type == 'refresh_saved_tab':
             print("[DEBUG] UI 큐: '저장 탭 갱신' 요청 수신.")
             try:
-                update_saved_sessions_tab(tab_saved_parent)
+                update_saved_sessions_tab(tab_saved_parent, root)
             except Exception as e:
                 print(f"[DEBUG] !!! 저장 탭 업데이트 중 오류 발생: {e} !!!")
 
@@ -73,11 +75,13 @@ def check_queue(root, tab_ai_parent, tab_raw_parent, tab_saved_parent):
             try:
                 update_raw_list_tab(
                     tab_raw_parent, 
+                    root,
                     app_state.global_last_raw_tabs_data, 
                     app_state.global_last_raw_windows
                 )
                 update_ai_summary_tab(
                     tab_ai_parent, 
+                    root,
                     app_state.global_last_ai_summary, 
                     app_state.global_last_raw_tabs_data,
                     app_state.global_last_raw_windows
@@ -133,11 +137,12 @@ if __name__ == "__main__":
     root.title("WorkDash")
     root.geometry("600x700")
 
-    # --- [수정] app_state에 정의된 Tkinter 변수 초기화 ---
+    # app_state에 정의된 Tkinter 변수 초기화 ---
     app_state.global_search_query_ai = tk.StringVar(root) 
     app_state.global_search_query_raw = tk.StringVar(root) 
     app_state.global_search_query_saved = tk.StringVar(root)
-    # --- [수정 끝] ---
+    # AI 작업 상태 변수 초기화
+    app_state.global_is_ai_summarizing = tk.BooleanVar(root, value=False)
 
     # 4. 공통 스타일 정의
     style = ttk.Style()
@@ -158,6 +163,13 @@ if __name__ == "__main__":
         style.configure("Icon.TLabel", font=("Arial", 11))
         # 3. '저장된 탭' 아이콘용 스타일
         style.configure("SavedIcon.TLabel", font=("Arial", 11))
+
+        # 4. 브라우저별 아이콘 스타일 (이모지 변경 가능)
+        style.configure("ChromeIcon.TLabel", font=("Arial", 11))
+        style.configure("FirefoxIcon.TLabel", font=("Arial", 11))
+        style.configure("EdgeIcon.TLabel", font=("Arial", 11))
+        style.configure("DefaultBrowserIcon.TLabel", font=("Arial", 11))
+
     except Exception as e:
         print(f"!!! 스타일 설정 오류: {e} !!!")
 
