@@ -3,6 +3,7 @@
 import json
 from tkinter import simpledialog
 from tkinter import filedialog
+from datetime import datetime
 
 # 전역 상태 및 유틸리티 import
 import app_state
@@ -285,22 +286,72 @@ def on_import_session_click(root):
     for file_path in file_paths:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                group_data = json.load(f)
+                loaded_data = json.load(f)
             
-            # (중요) group_data가 딕셔너리(단일 그룹)인지 확인
-            if isinstance(group_data, dict) and 'category' in group_data:
-                # session_utils.save_session을 재사용하여 리스트에 추가
-                # (save_session이 알아서 saved_at 타임스탬프를 새로 찍어줌)
-                if save_session(group_data):
-                    imported_count += 1
-                    print(f"  -> '{group_data.get('category')}' 그룹 가져오기 성공.")
-                else:
-                    print(f"  -> '{file_path}' 저장 실패 (save_session 오류)")
+            groups_to_process = []
+            
+            # [수정] 불러온 데이터가 '단일 그룹(dict)'인지 '전체 백업(list)'인지 확인
+            if isinstance(loaded_data, dict):
+                # 단일 그룹 파일
+                groups_to_process.append(loaded_data)
+            elif isinstance(loaded_data, list):
+                # '전체 내보내기' 백업 파일
+                print(f"  -> '{file_path}' (전체 백업) 파일을 감지. {len(loaded_data)}개 그룹 처리를 시도합니다.")
+                groups_to_process = loaded_data
             else:
-                    print(f"  -> '{file_path}'는 유효한 단일 그룹 파일이 아닙니다 (건너뜀).")
+                # 유효하지 않은 형식
+                print(f"  -> '{file_path}'는 유효한 세션 파일 형식이 아닙니다 (건너뜀).")
+                continue # 다음 파일로
+            
+            # [수정] 식별된 그룹 목록을 순회하며 저장
+            for group_data in groups_to_process:
+                if isinstance(group_data, dict) and 'category' in group_data:
+                    # session_utils.save_session을 재사용하여 리스트에 추가
+                    if save_session(group_data):
+                        imported_count += 1
+                        print(f"    -> '{group_data.get('category')}' 그룹 가져오기 성공.")
+                    else:
+                        print(f"    -> '{group_data.get('category')}' 저장 실패 (save_session 오류)")
+                else:
+                    print(f"    -> 파일 내에 유효하지 않은 그룹 데이터가 있습니다 (건너뜀).")
+
         except Exception as e:
             print(f"  -> '{file_path}' 파일 읽기/처리 중 오류 발생: {e}")
             
     if imported_count > 0:
         print(f"총 {imported_count}개의 그룹을 가져왔습니다. 탭을 갱신합니다.")
         app_state.ui_queue.put({'type': 'refresh_saved_tab'})
+
+def on_export_all_sessions_click(root):
+    """(신규) '저장된 탭'의 *모든* 그룹을 단일 JSON 파일로 내보냅니다."""
+    print("모든 세션 내보내기 요청...")
+    
+    all_sessions = load_sessions()
+    if not all_sessions:
+        print("  -> 내보낼 세션이 없습니다.")
+        # (Optional: Show a message box to the user)
+        # from tkinter import messagebox
+        # messagebox.showinfo("내보내기", "내보낼 세션이 없습니다.", parent=root)
+        return
+
+    default_filename = f"WorkDash_백업_{datetime.now().strftime('%Y%m%d')}.json"
+    
+    file_path = filedialog.asksaveasfilename(
+        title="모든 세션 백업 위치 선택",
+        initialfile=default_filename,
+        defaultextension=".json",
+        filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        parent=root
+    )
+    
+    if not file_path:
+        print("  -> 사용자가 내보내기를 취소했습니다.")
+        return
+
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            # (중요) 세션 *리스트* 전체를 파일에 씀
+            json.dump(all_sessions, f, ensure_ascii=False, indent=4)
+        print(f"  -> {len(all_sessions)}개 그룹을 '{file_path}'에 성공적으로 저장했습니다.")
+    except Exception as e:
+        print(f"  -> 파일 저장 중 오류 발생: {e}")

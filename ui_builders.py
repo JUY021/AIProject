@@ -380,7 +380,9 @@ def update_saved_sessions_tab(parent_frame, root):
         search_tab_name='saved',
         all_toggles_list=all_toggles,
         # [신규] '가져오기' 콜백 전달
-        on_import_cb=lambda: on_import_session_click(root)
+        on_import_cb=lambda: on_import_session_click(root),
+        # [신규] '전체 내보내기' 콜백 전달
+        on_export_all_cb=lambda: on_export_all_sessions_click(root)
     )
     # --- [수정 끝] ---
 
@@ -515,6 +517,7 @@ def update_saved_sessions_tab(parent_frame, root):
                     icon_label = ttk.Label(
                         item_list_frame, 
                         text=icon, 
+                        width=3,
                         anchor="center",
                         style=icon_style
                     )
@@ -567,7 +570,8 @@ def create_tab_top_controls(
     on_select_all_cb=None,
     on_deselect_all_cb=None,
     on_force_refresh_cb=None,
-    on_import_cb=None # [신규] 가져오기 콜백
+    on_import_cb=None, # [신규] 가져오기 콜백
+    on_export_all_cb=None # [신규] 전체 내보내기 콜백
 ):
     """
     각 탭의 상단 컨트롤 영역(선택, 접기, 검색)을 생성하는 
@@ -616,6 +620,15 @@ def create_tab_top_controls(
             command=on_import_cb
         )
         import_btn.pack(side=LEFT, padx=(5, 5))
+    # 2.6 (선택적) '전체 내보내기' 버튼
+    if on_export_all_cb:
+        export_all_btn = ttk.Button(
+            button_frame,
+            text="전체 내보내기",
+            bootstyle="info-outline",
+            command=on_export_all_cb
+        )
+        export_all_btn.pack(side=LEFT, padx=(0, 5))
 
     # 3. 검색창
     search_frame = ttk.Frame(top_controls_frame)
@@ -682,6 +695,7 @@ def create_live_item_row(parent_frame, item_title, item_icon, icon_style, raw_wi
     icon_label = ttk.Label(
         item_frame, 
         text=item_icon, 
+        width=3,
         anchor="center",
         style=icon_style
         )
